@@ -1,0 +1,1815 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="DefenseWatch – Real-time host intrusion detection and attack monitoring dashboard.">
+    <title>DefenseWatch – Host Intrusion Detection</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+    <link rel="stylesheet" href="/static/style.css" />
+</head>
+
+<body>
+
+    <!-- ── Navigation ──────────────────────────────────── -->
+    <nav>
+        <div class="brand">
+            <div class="brand-logo">DW</div>
+            <span class="brand-name">DefenseWatch</span>
+        </div>
+
+        <div id="nav-buttons">
+            <button class="nav-btn active" data-section="dashboard">Dashboard</button>
+            <button class="nav-btn" data-section="map">Attack Map</button>
+            <button class="nav-btn" data-section="events">Events</button>
+            <button class="nav-btn" data-section="intel">IP Intel</button>
+            <button class="nav-btn" data-section="incidents">Incidents</button>
+            <button class="nav-btn" data-section="scanner">Scanner</button>
+            <button class="nav-btn" data-section="firewall">Firewall</button>
+            <button class="nav-btn" data-section="settings">Settings</button>
+        </div>
+
+        <span id="ws-status">
+            <span id="ws-dot"></span>
+            <span id="ws-label">Disconnected</span>
+        </span>
+    </nav>
+
+    <!-- ── Main Content ────────────────────────────────── -->
+    <main>
+
+        <!-- Dashboard -->
+        <section id="section-dashboard" class="section">
+
+            <!-- Time range selector -->
+            <div class="flex items-center gap-2 mb-4">
+                <span class="text-sm text-gray-400">Time range:</span>
+                <select id="dashboard-range" class="input-dark">
+                    <option value="24">Last 24 hours</option>
+                    <option value="168">Last 7 days</option>
+                    <option value="720">Last 30 days</option>
+                </select>
+            </div>
+
+            <!-- Stat row -->
+            <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+                <div class="stat-card">
+                    <div class="stat-label">SSH Events</div>
+                    <div class="stat-value" id="stat-ssh">–</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">HTTP Events</div>
+                    <div class="stat-value" id="stat-http">–</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Unique IPs</div>
+                    <div class="stat-value" id="stat-ips">–</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Brute Forces</div>
+                    <div class="stat-value" id="stat-brute">–</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Port Scans</div>
+                    <div class="stat-value" id="stat-portscans">–</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Countries</div>
+                    <div class="stat-value" id="stat-countries">–</div>
+                </div>
+            </div>
+
+            <!-- Charts row 1 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div class="chart-card">
+                    <h3 class="chart-title">SSH Attempts / Hour (24 h)</h3>
+                    <div id="chart-ssh-timeline" style="width: 100%; min-height: 300px;"></div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">HTTP Attacks / Hour (24 h)</h3>
+                    <div id="chart-http-timeline" style="width: 100%; min-height: 300px;"></div>
+                </div>
+            </div>
+
+            <!-- Charts row 2 -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mb-6">
+                <div class="chart-card">
+                    <h3 class="chart-title">Top Countries</h3>
+                    <div id="chart-countries" style="width: 100%; min-height: 300px;"></div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Attack Types</h3>
+                    <div id="chart-attack-types" style="width: 100%; min-height: 300px;"></div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Top Usernames (SSH)</h3>
+                    <div id="chart-usernames" style="width: 100%; min-height: 300px;"></div>
+                </div>
+            </div>
+
+            <!-- Charts row 3 -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div class="chart-card">
+                    <h3 class="chart-title">Top Probed Endpoints</h3>
+                    <div id="chart-endpoints" style="width: 100%; min-height: 300px;"></div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-title">Top ASNs / ISPs</h3>
+                    <div id="chart-asns" style="width: 100%; min-height: 300px;"></div>
+                </div>
+            </div>
+
+            <!-- Most Active IPs -->
+            <div class="card mb-6">
+                <h3 class="chart-title mb-3">Most Active IPs</h3>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>IP Address</th>
+                                <th>Country</th>
+                                <th>Organization</th>
+                                <th>SSH</th>
+                                <th>HTTP</th>
+                                <th>Brute Force</th>
+                                <th>Port Scans</th>
+                                <th>Total</th>
+                                <th>Tags</th>
+                            </tr>
+                        </thead>
+                        <tbody id="dashboard-top-ips-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Live feed -->
+            <div class="card">
+                <h3 class="chart-title mb-3">Live Event Feed</h3>
+                <div id="live-feed" class="max-h-96 overflow-y-auto font-mono text-sm"></div>
+            </div>
+        </section>
+
+        <!-- Attack Map -->
+        <section id="section-map" class="section hidden">
+            <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-4">
+                    <h2 class="text-lg font-semibold">Attack Map</h2>
+                    <div class="flex items-center gap-2 text-xs text-gray-400">
+                        <span class="inline-block w-3 h-3 rounded-full bg-red-500"></span> SSH
+                        <span class="inline-block w-3 h-3 rounded-full bg-orange-500 ml-2"></span> HTTP
+                        <span class="inline-block w-3 h-3 rounded-full bg-yellow-500 ml-2"></span> Mixed
+                        <span class="inline-block w-3 h-3 rounded-full map-active-dot ml-2"></span> Active
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span id="map-arc-count" class="text-xs text-gray-500"></span>
+                    <select id="map-range" class="filter-input" style="width:auto;padding:4px 8px;font-size:0.75rem;">
+                        <option value="1">Last 1h</option>
+                        <option value="6" selected>Last 6h</option>
+                        <option value="12">Last 12h</option>
+                        <option value="24">Last 24h</option>
+                        <option value="48">Last 48h</option>
+                        <option value="168">Last 7d</option>
+                    </select>
+                </div>
+            </div>
+            <div id="attack-map"></div>
+        </section>
+
+        <!-- Events (unified) -->
+        <section id="section-events" class="section hidden">
+
+            <!-- Sub-tab bar -->
+            <div class="events-subtab-bar mb-4">
+                <button class="events-subtab active" data-evtab="ssh">
+                    <span class="subtab-icon">&#xe901;</span>SSH
+                </button>
+                <button class="events-subtab" data-evtab="http">
+                    <span class="subtab-icon">&#xe902;</span>HTTP / Nginx
+                </button>
+                <button class="events-subtab" data-evtab="brute">
+                    <span class="subtab-icon">&#xe903;</span>Brute Force
+                </button>
+                <button class="events-subtab" data-evtab="services">
+                    <span class="subtab-icon">&#xe905;</span>Services
+                </button>
+                <button class="events-subtab" data-evtab="portscans">
+                    <span class="subtab-icon">&#xe906;</span>Port Scans
+                </button>
+                <button class="events-subtab" data-evtab="anomalies">
+                    <span class="subtab-icon">&#xe904;</span>Anomalies
+                </button>
+            </div>
+
+            <!-- SSH sub-tab -->
+            <div id="evtab-ssh" class="evtab-panel">
+                <div class="card">
+                    <div class="mb-4">
+                        <h2 class="text-lg font-semibold mb-3">SSH Events</h2>
+                        <div class="flex flex-wrap gap-2">
+                            <input type="text" id="ssh-filter-ip" placeholder="Filter by IP…" class="input-dark" style="width: 160px;">
+                            <input type="text" id="ssh-filter-country" placeholder="Country…" class="input-dark" style="width: 120px;">
+                            <input type="text" id="ssh-filter-org" placeholder="Organization…" class="input-dark" style="width: 160px;">
+                            <input type="text" id="ssh-filter-username" placeholder="Username…" class="input-dark" style="width: 140px;">
+                            <select id="ssh-filter-type" class="input-dark" style="width: 160px;">
+                                <option value="">All Types</option>
+                                <option value="failed_password">Failed Password</option>
+                                <option value="invalid_user">Invalid User</option>
+                                <option value="accepted_password">Accepted Password</option>
+                                <option value="accepted_publickey">Accepted Key</option>
+                                <option value="disconnected">Disconnected</option>
+                            </select>
+                            <button id="ssh-filter-btn" class="btn-primary">Filter</button>
+                            <button id="ssh-clear-filter" class="btn-secondary">Clear</button>
+                            <div class="ml-auto flex gap-2">
+                                <button id="ssh-export-csv" class="btn-secondary" title="Export CSV">Export CSV</button>
+                                <button id="ssh-export-json" class="btn-secondary" title="Export JSON">Export JSON</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable-th" data-sort="timestamp" data-table="ssh">Time</th>
+                                    <th class="sortable-th" data-sort="source_ip" data-table="ssh">IP Address</th>
+                                    <th>Country</th>
+                                    <th>Organization</th>
+                                    <th class="sortable-th" data-sort="username" data-table="ssh">Username</th>
+                                    <th class="sortable-th" data-sort="event_type" data-table="ssh">Type</th>
+                                    <th class="sortable-th" data-sort="source_port" data-table="ssh">Src Port</th>
+                                    <th class="sortable-th" data-sort="service_port" data-table="ssh">Svc Port</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ssh-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex items-center justify-between mt-4" id="ssh-pagination">
+                        <span class="text-sm text-gray-400" id="ssh-page-info"></span>
+                        <div class="flex gap-2">
+                            <button id="ssh-prev" class="btn-secondary">← Prev</button>
+                            <button id="ssh-next" class="btn-secondary">Next →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- HTTP sub-tab -->
+            <div id="evtab-http" class="evtab-panel hidden">
+                <div class="card">
+                    <div class="mb-4">
+                        <h2 class="text-lg font-semibold mb-3">HTTP Events</h2>
+                        <div class="flex flex-wrap gap-2">
+                            <input type="text" id="http-filter-ip" placeholder="Filter by IP…" class="input-dark" style="width: 160px;">
+                            <input type="text" id="http-filter-country" placeholder="Country…" class="input-dark" style="width: 120px;">
+                            <input type="text" id="http-filter-org" placeholder="Organization…" class="input-dark" style="width: 160px;">
+                            <select id="http-filter-vhost" class="input-dark" style="width: 160px;">
+                                <option value="">All Vhosts</option>
+                            </select>
+                            <select id="http-filter-severity" class="input-dark" style="width: 140px;">
+                                <option value="">All Severities</option>
+                                <option value="critical">Critical</option>
+                                <option value="high">High</option>
+                                <option value="medium">Medium</option>
+                                <option value="low">Low</option>
+                            </select>
+                            <button id="http-filter-btn" class="btn-primary">Filter</button>
+                            <button id="http-clear-filter" class="btn-secondary">Clear</button>
+                            <div class="ml-auto flex gap-2">
+                                <button id="http-export-csv" class="btn-secondary" title="Export CSV">Export CSV</button>
+                                <button id="http-export-json" class="btn-secondary" title="Export JSON">Export JSON</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable-th" data-sort="timestamp" data-table="http">Time</th>
+                                    <th class="sortable-th" data-sort="source_ip" data-table="http">IP Address</th>
+                                    <th>Country</th>
+                                    <th>Organization</th>
+                                    <th class="sortable-th" data-sort="vhost" data-table="http">Vhost</th>
+                                    <th class="sortable-th" data-sort="method" data-table="http">Method</th>
+                                    <th>Path</th>
+                                    <th class="sortable-th" data-sort="status_code" data-table="http">Status</th>
+                                    <th>Attack Types</th>
+                                    <th class="sortable-th" data-sort="severity" data-table="http">Severity</th>
+                                    <th class="sortable-th" data-sort="scanner_name" data-table="http">Scanner</th>
+                                </tr>
+                            </thead>
+                            <tbody id="http-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex items-center justify-between mt-4">
+                        <span class="text-sm text-gray-400" id="http-page-info"></span>
+                        <div class="flex gap-2">
+                            <button id="http-prev" class="btn-secondary">← Prev</button>
+                            <button id="http-next" class="btn-secondary">Next →</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Brute Force sub-tab -->
+            <div id="evtab-brute" class="evtab-panel hidden">
+                <div class="card">
+                    <div class="mb-4">
+                        <h2 class="text-lg font-semibold mb-3">Brute Force Sessions</h2>
+                        <div class="flex flex-wrap gap-2">
+                            <input type="text" id="brute-filter-ip" placeholder="Filter by IP…" class="input-dark" style="width: 160px;">
+                            <input type="text" id="brute-filter-country" placeholder="Country…" class="input-dark" style="width: 120px;">
+                            <input type="text" id="brute-filter-org" placeholder="Organization…" class="input-dark" style="width: 160px;">
+                            <button id="brute-filter-btn" class="btn-primary">Filter</button>
+                            <button id="brute-clear-filter" class="btn-secondary">Clear</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Start</th>
+                                    <th>End</th>
+                                    <th>IP Address</th>
+                                    <th>Country</th>
+                                    <th>Organization</th>
+                                    <th>Attempts</th>
+                                    <th>Usernames</th>
+                                    <th>Svc Port</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="brute-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Services sub-tab (SQL, Mail, FTP) -->
+            <div id="evtab-services" class="evtab-panel hidden">
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Service Events</h2>
+                        <div class="flex gap-2">
+                            <input type="text" id="svc-filter-ip" placeholder="Filter by IP…" class="input-dark">
+                            <select id="svc-filter-type" class="input-dark">
+                                <option value="">All Services</option>
+                                <option value="mysql">MySQL</option>
+                                <option value="postgresql">PostgreSQL</option>
+                                <option value="postfix">Postfix (SMTP)</option>
+                                <option value="dovecot">Dovecot (IMAP/POP3)</option>
+                                <option value="vsftpd">vsftpd</option>
+                                <option value="proftpd">ProFTPD</option>
+                                <option value="pure-ftpd">pure-ftpd</option>
+                            </select>
+                            <button id="svc-filter-btn" class="btn-primary">Filter</button>
+                        </div>
+                    </div>
+                    <!-- Service summary cards -->
+                    <div id="svc-summary-cards" class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4"></div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Service</th>
+                                    <th>Event</th>
+                                    <th>Source IP</th>
+                                    <th>Username</th>
+                                    <th>Detail</th>
+                                    <th>Severity</th>
+                                    <th>Port</th>
+                                    <th>Country</th>
+                                </tr>
+                            </thead>
+                            <tbody id="svc-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex items-center justify-between mt-4">
+                        <span class="text-sm text-gray-400" id="svc-page-info"></span>
+                        <div class="flex gap-2">
+                            <button id="svc-prev" class="btn-secondary">&larr; Prev</button>
+                            <button id="svc-next" class="btn-secondary">Next &rarr;</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Port Scans sub-tab -->
+            <div id="evtab-portscans" class="evtab-panel hidden">
+                <div class="card">
+                    <div class="mb-4">
+                        <h2 class="text-lg font-semibold mb-3">Port Scan Events</h2>
+                        <div class="flex flex-wrap gap-2">
+                            <input type="text" id="ps-filter-ip" placeholder="Filter by IP…" class="input-dark" style="width: 160px;">
+                            <input type="text" id="ps-filter-country" placeholder="Country…" class="input-dark" style="width: 120px;">
+                            <input type="text" id="ps-filter-org" placeholder="Organization…" class="input-dark" style="width: 160px;">
+                            <select id="ps-filter-status" class="input-dark" style="width: 140px;">
+                                <option value="">All Statuses</option>
+                                <option value="active">Active</option>
+                                <option value="completed">Completed</option>
+                            </select>
+                            <button id="ps-filter-btn" class="btn-primary">Filter</button>
+                            <button id="ps-clear-filter" class="btn-secondary">Clear</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th class="sortable-th" data-sort="detected_at" data-table="ps">Time</th>
+                                    <th class="sortable-th" data-sort="source_ip" data-table="ps">IP Address</th>
+                                    <th>Country</th>
+                                    <th>Organization</th>
+                                    <th class="sortable-th" data-sort="port_count" data-table="ps">Ports Hit</th>
+                                    <th>Ports</th>
+                                    <th>Window</th>
+                                    <th class="sortable-th" data-sort="status" data-table="ps">Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ps-table-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex items-center justify-between mt-4">
+                        <span class="text-sm text-gray-400" id="ps-page-info"></span>
+                        <div class="flex gap-2">
+                            <button id="ps-prev" class="btn-secondary">&larr; Prev</button>
+                            <button id="ps-next" class="btn-secondary">Next &rarr;</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Anomalies sub-tab -->
+            <div id="evtab-anomalies" class="evtab-panel hidden">
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Anomaly Alerts</h2>
+                        <div class="flex gap-2">
+                            <select id="anomaly-range" class="input-dark">
+                                <option value="24">Last 24 hours</option>
+                                <option value="72">Last 3 days</option>
+                                <option value="168">Last 7 days</option>
+                            </select>
+                            <button id="anomaly-refresh-btn" class="btn-primary">Refresh</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Metric</th>
+                                    <th>Current</th>
+                                    <th>Baseline</th>
+                                    <th>Z-Score</th>
+                                    <th>Severity</th>
+                                    <th>Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="anomaly-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- IP Intel -->
+        <section id="section-intel" class="section hidden">
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">IP Intelligence</h2>
+                    <div class="flex gap-2">
+                        <input type="text" id="intel-search" placeholder="Search IP, org, country…"
+                            class="input-dark w-64">
+                        <button id="intel-search-btn" class="btn-primary">Search</button>
+                    </div>
+                </div>
+                <div id="intel-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+                <div class="flex items-center justify-between mt-4">
+                    <span class="text-sm text-gray-400" id="intel-page-info"></span>
+                    <div class="flex gap-2">
+                        <button id="intel-prev" class="btn-secondary">← Prev</button>
+                        <button id="intel-next" class="btn-secondary">Next →</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Incidents -->
+        <section id="section-incidents" class="section hidden">
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">Incident Response</h2>
+                    <div class="flex gap-2">
+                        <select id="incident-filter-status" class="input-dark">
+                            <option value="">All Statuses</option>
+                            <option value="open">Open</option>
+                            <option value="investigating">Investigating</option>
+                            <option value="resolved">Resolved</option>
+                            <option value="closed">Closed</option>
+                        </select>
+                        <select id="incident-filter-severity" class="input-dark">
+                            <option value="">All Severities</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                        </select>
+                        <button id="incident-filter-btn" class="btn-secondary">Filter</button>
+                        <button id="incident-create-btn" class="btn-primary">+ New Incident</button>
+                    </div>
+                </div>
+
+                <!-- Incident stats -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="incident-stats">
+                    <div class="stat-card">
+                        <div class="stat-label">Open</div>
+                        <div class="stat-value" id="incident-stat-open">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Investigating</div>
+                        <div class="stat-value" id="incident-stat-investigating">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Resolved</div>
+                        <div class="stat-value" id="incident-stat-resolved">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Closed</div>
+                        <div class="stat-value" id="incident-stat-closed">0</div>
+                    </div>
+                </div>
+
+                <!-- Incident list -->
+                <div id="incident-list" class="space-y-3"></div>
+
+                <div class="flex items-center justify-between mt-4">
+                    <span class="text-sm text-gray-400" id="incident-page-info"></span>
+                    <div class="flex gap-2">
+                        <button id="incident-prev" class="btn-secondary">← Prev</button>
+                        <button id="incident-next" class="btn-secondary">Next →</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Scanner -->
+        <section id="section-scanner" class="section hidden">
+            <div class="card mb-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h2 class="text-lg font-semibold">Vulnerability Scanner</h2>
+                    <div class="flex gap-2">
+                        <button id="scanner-preview-btn" class="btn-secondary">Preview Targets</button>
+                        <button id="scanner-start-btn" class="btn-primary">Run Scan</button>
+                        <button id="scanner-stop-btn" class="btn-secondary hidden"
+                            style="color:#f87171;border-color:#f87171">Stop Scan</button>
+                        <button id="scanner-clear-btn" class="btn-secondary">Clear Results</button>
+                    </div>
+                </div>
+
+                <!-- Target preview panel -->
+                <div id="scanner-targets-panel" class="hidden mb-4">
+                    <div class="card" style="background:var(--bg)">
+                        <div class="flex items-center justify-between mb-3">
+                            <h3 class="chart-title" style="margin-bottom:0">Detected Targets</h3>
+                            <div class="flex gap-2">
+                                <button id="scanner-select-all" class="btn-secondary"
+                                    style="padding:2px 8px;font-size:0.7rem">Select All</button>
+                                <button id="scanner-select-none" class="btn-secondary"
+                                    style="padding:2px 8px;font-size:0.7rem">Select None</button>
+                            </div>
+                        </div>
+                        <div id="scanner-targets-list" class="space-y-1" style="max-height:200px;overflow-y:auto"></div>
+                        <div id="scanner-profile-info" class="mt-3 text-xs text-gray-500"></div>
+                        <div class="flex gap-3 mt-3">
+                            <button id="scanner-run-selected" class="btn-primary">Scan Selected</button>
+                            <button id="scanner-close-targets" class="btn-secondary">Close</button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Scan status banner -->
+                <div id="scanner-status-bar" class="hidden mb-4"
+                    style="padding:0.75rem 1rem;border-radius:0.5rem;background:var(--color-surface);border:1px solid var(--color-border)">
+                    <div class="flex items-center gap-2">
+                        <span id="scanner-status-icon"></span>
+                        <span id="scanner-status-text" class="text-sm"></span>
+                    </div>
+                    <!-- Batch progress -->
+                    <div id="scanner-batch-info" class="hidden mt-2">
+                        <div id="scanner-batch-list" class="flex gap-2" style="flex-wrap:wrap"></div>
+                    </div>
+                    <div id="scanner-progress-bar" class="hidden"
+                        style="margin-top:0.5rem;height:4px;border-radius:2px;background:#1e293b;overflow:hidden">
+                        <div id="scanner-progress-fill"
+                            style="height:100%;width:0%;background:var(--color-accent);transition:width 0.3s"></div>
+                    </div>
+                </div>
+
+                <!-- Severity summary cards -->
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-4" id="scanner-severity-cards">
+                    <div class="stat-card">
+                        <div class="stat-label">Critical</div>
+                        <div class="stat-value text-red-500" id="scanner-count-critical">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">High</div>
+                        <div class="stat-value text-orange-500" id="scanner-count-high">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Medium</div>
+                        <div class="stat-value text-yellow-500" id="scanner-count-medium">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Low</div>
+                        <div class="stat-value text-blue-400" id="scanner-count-low">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Info</div>
+                        <div class="stat-value text-gray-400" id="scanner-count-info">0</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Live findings feed (shown during scan) -->
+            <div id="scanner-live-feed" class="card mb-4 hidden">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="chart-title" style="margin-bottom:0">Live Findings</h3>
+                    <span id="scanner-live-count" class="badge badge-info">0 findings</span>
+                </div>
+                <div id="scanner-live-body" class="space-y-1" style="max-height:400px;overflow-y:auto"></div>
+            </div>
+
+            <!-- Scan history -->
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">Scan History</h3>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Targets</th>
+                                <th>Status</th>
+                                <th>Findings</th>
+                                <th>Started</th>
+                                <th>Duration</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scanner-history-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Findings table -->
+            <div class="card">
+                <div class="flex items-center justify-between mb-3">
+                    <h3 class="chart-title" style="margin-bottom:0">Findings</h3>
+                    <div class="flex gap-2">
+                        <select id="scanner-filter-severity" class="input-dark">
+                            <option value="">All Severities</option>
+                            <option value="critical">Critical</option>
+                            <option value="high">High</option>
+                            <option value="medium">Medium</option>
+                            <option value="low">Low</option>
+                            <option value="info">Info</option>
+                        </select>
+                        <button id="scanner-filter-btn" class="btn-secondary">Filter</button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Severity</th>
+                                <th>Name</th>
+                                <th>Host</th>
+                                <th>Matched URL</th>
+                                <th>Tags</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scanner-findings-body"></tbody>
+                    </table>
+                </div>
+                <div class="flex items-center justify-between mt-4">
+                    <span class="text-sm text-gray-400" id="scanner-page-info"></span>
+                    <div class="flex gap-2">
+                        <button id="scanner-prev" class="btn-secondary">&larr; Prev</button>
+                        <button id="scanner-next" class="btn-secondary">Next &rarr;</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Firewall -->
+        <section id="section-firewall" class="section hidden">
+
+            <!-- Sub-tab bar -->
+            <div class="events-subtab-bar mb-4">
+                <button class="events-subtab active" data-fwtab="rules" onclick="loadFwTab('rules')">
+                    Firewall Rules
+                </button>
+                <button class="events-subtab" data-fwtab="fail2ban" onclick="loadFwTab('fail2ban')">
+                    Fail2Ban
+                </button>
+            </div>
+
+            <!-- ═══ Sub-tab: Firewall Rules ═══ -->
+            <div id="fwtab-rules" class="fwtab-panel">
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Firewall Management</h2>
+                        <div class="flex items-center gap-3">
+                            <span id="fw-backend-badge" class="badge badge-info"></span>
+                            <span class="text-sm text-gray-400">Auto-block:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="fw-autoblock-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="stat-card">
+                            <div class="stat-label">Blocked IPs</div>
+                            <div class="stat-value" id="fw-stat-blocked">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Auto-blocked</div>
+                            <div class="stat-value" id="fw-stat-auto">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Manual Blocks</div>
+                            <div class="stat-value" id="fw-stat-manual">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Temporary</div>
+                            <div class="stat-value" id="fw-stat-temp">0</div>
+                        </div>
+                    </div>
+
+                    <div id="fw-thresholds" class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Auto-Block Thresholds</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">SSH
+                                    Failures</label>
+                                <input type="number" id="fw-thresh-ssh" class="input-dark w-full" min="1" value="20">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Brute Force
+                                    Sessions</label>
+                                <input type="number" id="fw-thresh-brute" class="input-dark w-full" min="1" value="3">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">HTTP Attack
+                                    Events</label>
+                                <input type="number" id="fw-thresh-http" class="input-dark w-full" min="1" value="100">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Threat
+                                    Score</label>
+                                <input type="number" id="fw-thresh-score" class="input-dark w-full" min="0" max="100"
+                                    value="70">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Window
+                                    (seconds)</label>
+                                <input type="number" id="fw-thresh-window" class="input-dark w-full" min="60"
+                                    value="3600">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Block
+                                    Duration (hours, 0=permanent)</label>
+                                <input type="number" id="fw-thresh-duration" class="input-dark w-full" min="0"
+                                    value="0">
+                            </div>
+                            <div class="flex items-end">
+                                <button id="fw-save-thresholds" class="btn-primary">Save Thresholds</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <h3 class="chart-title mb-3">Block IP Address</h3>
+                    <div class="flex gap-2 items-end">
+                        <div style="flex:1">
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">IP
+                                Address</label>
+                            <input type="text" id="fw-block-ip" class="input-dark w-full"
+                                placeholder="e.g. 192.168.1.100">
+                        </div>
+                        <div style="flex:2">
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Reason</label>
+                            <input type="text" id="fw-block-reason" class="input-dark w-full"
+                                placeholder="Manual block reason…">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Duration
+                                (hours, empty=permanent)</label>
+                            <input type="number" id="fw-block-duration" class="input-dark" style="width:120px" min="0"
+                                placeholder="Perm.">
+                        </div>
+                        <button id="fw-block-btn" class="btn-primary" style="white-space:nowrap">Block IP</button>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <h3 class="chart-title mb-3">Active Blocks</h3>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>IP</th>
+                                    <th>Reason</th>
+                                    <th>Source</th>
+                                    <th>Blocked At</th>
+                                    <th>Expires</th>
+                                    <th>Country</th>
+                                    <th>Org</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fw-blocked-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="chart-title mb-3">Block History</h3>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>IP</th>
+                                    <th>Reason</th>
+                                    <th>Source</th>
+                                    <th>Blocked At</th>
+                                    <th>Unblocked At</th>
+                                    <th>Status</th>
+                                    <th>Country</th>
+                                </tr>
+                            </thead>
+                            <tbody id="fw-history-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ═══ Sub-tab: Fail2Ban ═══ -->
+            <div id="fwtab-fail2ban" class="fwtab-panel hidden">
+                <!-- F2B status header -->
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Fail2Ban</h2>
+                        <div class="flex items-center gap-2">
+                            <span id="f2b-status-badge" class="badge badge-info">Checking…</span>
+                            <button id="f2b-reload-btn" class="btn-secondary" style="font-size:0.75rem">Reload
+                                Config</button>
+                        </div>
+                    </div>
+
+                    <!-- Summary stats -->
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                        <div class="stat-card">
+                            <div class="stat-label">Version</div>
+                            <div class="stat-value text-sm" id="f2b-stat-version">-</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Active Jails</div>
+                            <div class="stat-value" id="f2b-stat-jails">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Total Banned</div>
+                            <div class="stat-value text-red-400" id="f2b-stat-banned">0</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">Config Files</div>
+                            <div class="stat-value text-sm" id="f2b-stat-configs">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Not-installed notice (hidden by default) -->
+                    <div id="f2b-not-installed" class="hidden"
+                        style="padding:1.5rem;text-align:center;border:1px dashed var(--border);border-radius:0.5rem">
+                        <p class="text-gray-400 mb-2">Fail2Ban is not installed on this system.</p>
+                        <p class="text-xs text-gray-500">Install with: <code
+                                class="text-blue-400">sudo apt install fail2ban</code></p>
+                    </div>
+                </div>
+
+                <!-- Jails overview -->
+                <div id="f2b-jails-section" class="card mb-4">
+                    <h3 class="chart-title mb-3">Active Jails</h3>
+                    <div id="f2b-jails-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+                </div>
+
+                <!-- All banned IPs table -->
+                <div id="f2b-bans-section" class="card mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="chart-title" style="margin-bottom:0">Banned IPs</h3>
+                        <div class="flex gap-2">
+                            <input type="text" id="f2b-ban-ip" class="input-dark" placeholder="IP to ban"
+                                style="width:160px">
+                            <select id="f2b-ban-jail" class="input-dark" style="width:150px"></select>
+                            <button id="f2b-ban-btn" class="btn-primary"
+                                style="font-size:0.75rem;white-space:nowrap">Ban IP</button>
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>IP</th>
+                                    <th>Jail</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="f2b-banned-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Configuration view -->
+                <div id="f2b-config-section" class="card mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="chart-title" style="margin-bottom:0">Current Configuration</h3>
+                        <button id="f2b-show-config-btn" class="btn-secondary"
+                            style="font-size:0.75rem">Show/Hide</button>
+                    </div>
+                    <div id="f2b-config-content" class="hidden">
+                        <div id="f2b-config-files" class="text-xs text-gray-500 mb-2"></div>
+                        <pre id="f2b-config-raw"
+                            style="background:#0f172a;padding:0.75rem;border-radius:0.375rem;overflow-x:auto;white-space:pre-wrap;font-size:0.75rem;max-height:400px;overflow-y:auto"></pre>
+                    </div>
+                </div>
+
+                <!-- Recommended config -->
+                <div id="f2b-recommended-section" class="card">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="chart-title" style="margin-bottom:0">Recommended Configuration</h3>
+                        <button id="f2b-gen-config-btn" class="btn-secondary"
+                            style="font-size:0.75rem">Generate</button>
+                    </div>
+                    <p class="text-xs text-gray-500 mb-3">Auto-generated jail configurations based on your monitored
+                        services.</p>
+                    <div id="f2b-recommended-content" class="hidden">
+                        <pre id="f2b-recommended-raw"
+                            style="background:#0f172a;padding:0.75rem;border-radius:0.375rem;overflow-x:auto;white-space:pre-wrap;font-size:0.75rem;max-height:500px;overflow-y:auto"></pre>
+                        <button id="f2b-copy-config" class="btn-secondary mt-4" style="font-size:0.75rem">Copy to
+                            Clipboard</button>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- Settings -->
+        <section id="section-settings" class="section hidden">
+            <!-- Sub-tabs -->
+            <div class="events-subtab-bar mb-4">
+                <button class="events-subtab active" data-settab="webhooks">Webhooks</button>
+                <button class="events-subtab" data-settab="telegram">Telegram</button>
+                <button class="events-subtab" data-settab="apikeys">API Keys</button>
+                <button class="events-subtab" data-settab="services">Services</button>
+                <button class="events-subtab" data-settab="detection">Detection</button>
+                <button class="events-subtab" data-settab="general">General</button>
+            </div>
+
+            <div id="settings-feedback" class="mb-3 text-sm hidden"></div>
+
+            <!-- ── Webhooks ──────────────────────────────────── -->
+            <div id="settab-webhooks" class="settab-panel">
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Notification Webhooks</h2>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-400">Enabled:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="set-wh-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Alert Webhook</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Webhook
+                                    URL</label>
+                                <input type="url" id="set-wh-url" class="input-dark w-full"
+                                    placeholder="https://hooks.example.com/...">
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Min
+                                        Severity</label>
+                                    <select id="set-wh-severity" class="input-dark w-full">
+                                        <option value="low">Low</option>
+                                        <option value="medium">Medium</option>
+                                        <option value="high">High</option>
+                                        <option value="critical">Critical</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label class="text-xs text-gray-500"
+                                        style="display:block;margin-bottom:4px">Cooldown (sec)</label>
+                                    <input type="number" id="set-wh-cooldown" class="input-dark w-full" min="0"
+                                        value="300">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Event Notifications</h3>
+                        <p class="text-xs text-gray-500 mb-3">Select which events trigger webhook notifications:</p>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="set-wh-evt-brute" value="brute_force" checked>
+                                SSH Brute Force
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="set-wh-evt-http" value="http_attack" checked>
+                                HTTP Attacks
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="set-wh-evt-anomaly" value="anomaly" checked>
+                                Anomalies
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="set-wh-evt-firewall" value="firewall_block" checked>
+                                Firewall Blocks
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="set-wh-evt-portscan" value="port_scan" checked>
+                                Port Scans
+                            </label>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Report Webhook</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Webhook
+                                    URL</label>
+                                <input type="url" id="set-rpt-url" class="input-dark w-full"
+                                    placeholder="https://hooks.example.com/...">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Interval
+                                    (hours)</label>
+                                <input type="number" id="set-rpt-interval" class="input-dark w-full" min="1" value="24">
+                            </div>
+                            <div class="flex items-center gap-2" style="padding-top:1.25rem">
+                                <input type="checkbox" id="set-rpt-enabled">
+                                <label class="text-sm text-gray-400" for="set-rpt-enabled">Enable Reports</label>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button id="set-wh-save" class="btn-primary">Save Webhook Settings</button>
+                    </div>
+                </div>
+                <div class="card" style="background:var(--bg)">
+                    <h3 class="chart-title mb-3">Environment Variables</h3>
+                    <p class="text-xs text-gray-500">
+                        <code class="text-gray-400">DEFENSEWATCH_WEBHOOK_URL</code> – alert webhook<br>
+                        <code class="text-gray-400">DEFENSEWATCH_REPORTS_WEBHOOK_URL</code> – report webhook
+                    </p>
+                </div>
+            </div>
+
+            <!-- ── Telegram ──────────────────────────────────── -->
+            <div id="settab-telegram" class="settab-panel hidden">
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Telegram Notifications</h2>
+                        <div class="flex items-center gap-3">
+                            <span id="tg-status-badge" class="badge badge-info">Checking...</span>
+                            <span class="text-sm text-gray-400">Enabled:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="tg-enabled-toggle">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+                    <div id="tg-bot-info" class="mb-4 text-sm text-gray-400"></div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Bot Configuration</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Bot
+                                    Token</label>
+                                <input type="password" id="tg-bot-token" class="input-dark w-full"
+                                    placeholder="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Chat IDs
+                                    (comma-separated)</label>
+                                <input type="text" id="tg-chat-ids" class="input-dark w-full"
+                                    placeholder="123456789, -1001234567890">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Alert Settings</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Min
+                                    Severity</label>
+                                <select id="tg-min-severity" class="input-dark w-full">
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                    <option value="critical">Critical</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Cooldown
+                                    (seconds)</label>
+                                <input type="number" id="tg-cooldown" class="input-dark w-full" min="0" value="300">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Event Notifications</h3>
+                        <p class="text-xs text-gray-500 mb-3">Select which events trigger Telegram messages:</p>
+                        <div class="flex flex-wrap gap-4">
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="tg-evt-brute" value="brute_force" checked>
+                                SSH Brute Force
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="tg-evt-http" value="http_attack" checked>
+                                HTTP Attacks
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="tg-evt-anomaly" value="anomaly" checked>
+                                Anomalies
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="tg-evt-firewall" value="firewall_block" checked>
+                                Firewall Blocks
+                            </label>
+                            <label class="flex items-center gap-2 text-sm text-gray-300">
+                                <input type="checkbox" id="tg-evt-portscan" value="port_scan" checked>
+                                Port Scans
+                            </label>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Scheduled Reports</h3>
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 items-end">
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="tg-daily-reports">
+                                <label class="text-sm text-gray-400" for="tg-daily-reports">Daily Reports</label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="checkbox" id="tg-weekly-reports">
+                                <label class="text-sm text-gray-400" for="tg-weekly-reports">Weekly Reports
+                                    (Mon)</label>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Report Hour
+                                    (0-23)</label>
+                                <input type="number" id="tg-report-hour" class="input-dark w-full" min="0" max="23"
+                                    value="8">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <button id="tg-save-btn" class="btn-primary">Save Settings</button>
+                        <button id="tg-test-btn" class="btn-secondary">Send Test Message</button>
+                        <button id="tg-report-btn" class="btn-secondary">Send Report Now</button>
+                    </div>
+                    <div id="tg-feedback" class="mt-3 text-sm hidden"></div>
+                </div>
+                <div class="card" style="background:var(--bg)">
+                    <h3 class="chart-title mb-3">Setup Guide</h3>
+                    <ol class="text-sm text-gray-400 space-y-2" style="list-style:decimal;padding-left:1.25rem">
+                        <li>Create a bot via <a href="https://t.me/BotFather" class="text-blue-400" target="_blank"
+                                rel="noopener">@BotFather</a> on Telegram</li>
+                        <li>Copy the bot token and paste it above</li>
+                        <li>Add the bot to a group or start a direct chat with it</li>
+                        <li>Get your Chat ID via <a href="https://t.me/userinfobot" class="text-blue-400"
+                                target="_blank" rel="noopener">@userinfobot</a> (for DMs) or check group info</li>
+                        <li>Click "Send Test Message" to verify the connection</li>
+                    </ol>
+                    <p class="text-xs text-gray-500 mt-3">
+                        Env vars: <code class="text-gray-400">DEFENSEWATCH_TELEGRAM_BOT_TOKEN</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_TELEGRAM_CHAT_IDS</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- ── API Keys ──────────────────────────────────── -->
+            <div id="settab-apikeys" class="settab-panel hidden">
+                <div class="card mb-4">
+                    <h2 class="text-lg font-semibold mb-4">API Keys &amp; Threat Intelligence</h2>
+
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Threat Intelligence</h3>
+                        <div class="flex items-center gap-3 mb-3">
+                            <span class="text-sm text-gray-400">Enabled:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="set-ti-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                            <div style="margin-left:auto">
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Refresh
+                                    Interval (hours)</label>
+                                <input type="number" id="set-ti-refresh" class="input-dark" min="1" value="6"
+                                    style="width:80px">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">AbuseIPDB
+                                    API Key
+                                    <span id="set-abuseipdb-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-abuseipdb-key" class="input-dark w-full"
+                                    placeholder="Enter API key...">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">AlienVault
+                                    OTX Key
+                                    <span id="set-otx-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-otx-key" class="input-dark w-full"
+                                    placeholder="Enter API key...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">External Enrichment APIs</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Shodan API
+                                    Key
+                                    <span id="set-shodan-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-shodan-key" class="input-dark w-full"
+                                    placeholder="Enter API key...">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">VirusTotal
+                                    API Key
+                                    <span id="set-vt-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-vt-key" class="input-dark w-full"
+                                    placeholder="Enter API key...">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Censys API
+                                    ID
+                                    <span id="set-censys-id-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-censys-id" class="input-dark w-full"
+                                    placeholder="Enter API ID...">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Censys API
+                                    Secret
+                                    <span id="set-censys-secret-status" class="badge badge-info"
+                                        style="margin-left:6px;font-size:0.6rem"></span>
+                                </label>
+                                <input type="password" id="set-censys-secret" class="input-dark w-full"
+                                    placeholder="Enter API secret...">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex gap-3">
+                        <button id="set-apikeys-save" class="btn-primary">Save API Keys</button>
+                    </div>
+                </div>
+                <div class="card" style="background:var(--bg)">
+                    <h3 class="chart-title mb-3">Environment Variables</h3>
+                    <p class="text-xs text-gray-500">
+                        API keys can also be set via environment variables (takes precedence):<br>
+                        <code class="text-gray-400">DEFENSEWATCH_ABUSEIPDB_API_KEY</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_OTX_API_KEY</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_SHODAN_API_KEY</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_VIRUSTOTAL_API_KEY</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_CENSYS_API_ID</code>,
+                        <code class="text-gray-400">DEFENSEWATCH_CENSYS_API_SECRET</code>
+                    </p>
+                </div>
+            </div>
+
+            <!-- ── Monitored Services ────────────────────────── -->
+            <div id="settab-services" class="settab-panel hidden">
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h2 class="text-lg font-semibold">Monitored Services</h2>
+                        <button id="set-svc-add-btn" class="btn-primary">+ Add Service</button>
+                    </div>
+                    <p class="text-sm text-gray-400 mb-4">Log files currently being monitored. Add or remove services to
+                        (re)configure monitoring. Changes require a restart to take effect for watchers.</p>
+
+                    <div id="set-svc-list" class="space-y-3"></div>
+                </div>
+
+                <!-- Add service form (hidden by default) -->
+                <div id="set-svc-form" class="card mb-4 hidden">
+                    <h3 class="chart-title mb-3">Add Monitored Service</h3>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <div>
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Service
+                                Type</label>
+                            <select id="set-svc-type" class="input-dark w-full">
+                                <option value="ssh">SSH</option>
+                                <option value="http">HTTP / Nginx</option>
+                                <option value="mysql">MySQL</option>
+                                <option value="postgresql">PostgreSQL</option>
+                                <option value="mail">Mail</option>
+                                <option value="ftp">FTP</option>
+                            </select>
+                        </div>
+                        <div style="grid-column:span 2">
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Log File
+                                Path</label>
+                            <input type="text" id="set-svc-path" class="input-dark w-full"
+                                placeholder="/var/log/auth.log">
+                        </div>
+                        <div>
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Port</label>
+                            <input type="number" id="set-svc-port" class="input-dark w-full" placeholder="22">
+                        </div>
+                    </div>
+                    <div class="flex gap-3 mt-4">
+                        <button id="set-svc-submit" class="btn-primary">Add</button>
+                        <button id="set-svc-cancel" class="btn-secondary">Cancel</button>
+                    </div>
+                </div>
+
+                <div class="card" style="background:var(--bg)">
+                    <h3 class="chart-title mb-3">Persist Changes</h3>
+                    <p class="text-sm text-gray-400 mb-3">Runtime changes are lost on restart. Save to <code
+                            class="text-gray-400">config.yaml</code> to persist.</p>
+                    <button id="set-save-config" class="btn-primary">Save to config.yaml</button>
+                    <span id="set-save-config-msg" class="text-sm ml-3 hidden"></span>
+                </div>
+            </div>
+
+            <!-- ── Detection ─────────────────────────────────── -->
+            <div id="settab-detection" class="settab-panel hidden">
+                <div class="card mb-4">
+                    <h2 class="text-lg font-semibold mb-4">Detection Thresholds</h2>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">SSH Brute Force</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Failed
+                                    Attempts Threshold</label>
+                                <input type="number" id="set-det-ssh-thresh" class="input-dark w-full" min="1">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Time Window
+                                    (seconds)</label>
+                                <input type="number" id="set-det-ssh-window" class="input-dark w-full" min="10">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">HTTP Scan Detection</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Request
+                                    Threshold</label>
+                                <input type="number" id="set-det-http-thresh" class="input-dark w-full" min="1">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Time Window
+                                    (seconds)</label>
+                                <input type="number" id="set-det-http-window" class="input-dark w-full" min="10">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Port Scan Detection</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Distinct
+                                    Port Threshold</label>
+                                <input type="number" id="set-det-portscan-thresh" class="input-dark w-full" min="2">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Time Window
+                                    (seconds)</label>
+                                <input type="number" id="set-det-portscan-window" class="input-dark w-full" min="10">
+                            </div>
+                        </div>
+                    </div>
+                    <button id="set-det-save" class="btn-primary">Save Detection Settings</button>
+                </div>
+            </div>
+
+            <!-- ── General ───────────────────────────────────── -->
+            <div id="settab-general" class="settab-panel hidden">
+                <div class="card mb-4">
+                    <h2 class="text-lg font-semibold mb-4">General Settings</h2>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Host Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500"
+                                    style="display:block;margin-bottom:4px">Hostname</label>
+                                <input type="text" id="set-gen-hostname" class="input-dark w-full">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500"
+                                    style="display:block;margin-bottom:4px">Latitude</label>
+                                <input type="number" id="set-gen-lat" class="input-dark w-full" step="0.0001">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500"
+                                    style="display:block;margin-bottom:4px">Longitude</label>
+                                <input type="number" id="set-gen-lon" class="input-dark w-full" step="0.0001">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="card mb-4" style="background:var(--bg)">
+                        <h3 class="chart-title mb-3">Data Management</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Data
+                                    Retention (days)</label>
+                                <input type="number" id="set-gen-retention" class="input-dark w-full" min="1">
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">GeoIP
+                                    Re-enrich (days)</label>
+                                <input type="number" id="set-gen-reenrich" class="input-dark w-full" min="1">
+                            </div>
+                            <div class="flex items-center gap-2" style="padding-top:1.25rem">
+                                <input type="checkbox" id="set-gen-whois">
+                                <label class="text-sm text-gray-400" for="set-gen-whois">WHOIS Lookups Enabled</label>
+                            </div>
+                        </div>
+                    </div>
+                    <button id="set-gen-save" class="btn-primary">Save General Settings</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Finding Detail Modal -->
+    <div id="finding-detail-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:800px">
+            <div class="modal-header">
+                <h2 id="finding-detail-title" class="text-lg font-semibold"></h2>
+                <button class="modal-close-btn"
+                    onclick="document.getElementById('finding-detail-modal').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="grid grid-cols-2 gap-4 mb-4" id="finding-detail-meta"></div>
+                <div class="card mb-4">
+                    <h3 class="chart-title">Description</h3>
+                    <p id="finding-detail-desc" class="text-sm" style="white-space:pre-wrap"></p>
+                </div>
+                <div class="card mb-4" id="finding-remediation-card">
+                    <h3 class="chart-title">Remediation</h3>
+                    <p id="finding-detail-remediation" class="text-sm" style="white-space:pre-wrap"></p>
+                </div>
+                <div class="card mb-4 hidden" id="finding-extracted-card">
+                    <h3 class="chart-title">Extracted Evidence</h3>
+                    <ul id="finding-detail-extracted" class="text-sm" style="list-style:disc;padding-left:1.25rem"></ul>
+                </div>
+                <div class="card mb-4 hidden" id="finding-request-card">
+                    <h3 class="chart-title">Request</h3>
+                    <pre id="finding-detail-request" class="text-xs"
+                        style="background:#0f172a;padding:0.75rem;border-radius:0.375rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto"></pre>
+                </div>
+                <div class="card mb-4 hidden" id="finding-response-card">
+                    <h3 class="chart-title">Response</h3>
+                    <pre id="finding-detail-response" class="text-xs"
+                        style="background:#0f172a;padding:0.75rem;border-radius:0.375rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all;max-height:300px;overflow-y:auto"></pre>
+                </div>
+                <div class="card mb-4" id="finding-curl-card">
+                    <h3 class="chart-title">Reproduce (curl)</h3>
+                    <pre id="finding-detail-curl" class="text-xs"
+                        style="background:#0f172a;padding:0.75rem;border-radius:0.375rem;overflow-x:auto;white-space:pre-wrap;word-break:break-all"></pre>
+                </div>
+                <div class="card" id="finding-refs-card">
+                    <h3 class="chart-title">References</h3>
+                    <ul id="finding-detail-refs" class="text-sm" style="list-style:disc;padding-left:1.25rem"></ul>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Incident Modal -->
+    <div id="incident-create-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:600px">
+            <div class="modal-header">
+                <h2 class="text-lg font-semibold">Create Incident</h2>
+                <button class="modal-close-btn"
+                    onclick="document.getElementById('incident-create-modal').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Title</label>
+                        <input type="text" id="incident-form-title" class="input-dark w-full"
+                            placeholder="Brief incident title…">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Description</label>
+                        <textarea id="incident-form-desc" class="input-dark w-full" rows="3"
+                            placeholder="What happened? Include relevant details…"></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <div style="flex:1">
+                            <label class="text-xs text-gray-500"
+                                style="display:block;margin-bottom:4px">Severity</label>
+                            <select id="incident-form-severity" class="input-dark w-full">
+                                <option value="low">Low</option>
+                                <option value="medium" selected>Medium</option>
+                                <option value="high">High</option>
+                                <option value="critical">Critical</option>
+                            </select>
+                        </div>
+                        <div style="flex:1">
+                            <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Source IPs
+                                (comma-separated)</label>
+                            <input type="text" id="incident-form-ips" class="input-dark w-full"
+                                placeholder="1.2.3.4, 5.6.7.8">
+                        </div>
+                    </div>
+                    <div class="flex justify-between" style="padding-top:0.5rem">
+                        <button class="btn-secondary"
+                            onclick="document.getElementById('incident-create-modal').classList.add('hidden')">Cancel</button>
+                        <button id="incident-form-submit" class="btn-primary">Create Incident</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Incident Detail Modal -->
+    <div id="incident-detail-modal" class="modal-overlay hidden">
+        <div class="modal-content" style="max-width:900px">
+            <div class="modal-header">
+                <h2 id="incident-detail-title" class="text-lg font-semibold"></h2>
+                <button class="modal-close-btn"
+                    onclick="document.getElementById('incident-detail-modal').classList.add('hidden')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <!-- Incident meta -->
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4" id="incident-detail-meta"></div>
+
+                <!-- Description -->
+                <div class="card mb-4">
+                    <h3 class="chart-title">Description</h3>
+                    <p id="incident-detail-desc" class="text-sm" style="white-space:pre-wrap"></p>
+                </div>
+
+                <!-- Status update -->
+                <div class="card mb-4">
+                    <h3 class="chart-title">Update Status</h3>
+                    <div class="flex gap-2 mt-2" id="incident-status-actions"></div>
+                </div>
+
+                <!-- Source IPs -->
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="chart-title" style="margin-bottom:0">Source IPs</h3>
+                        <div class="flex gap-2">
+                            <button class="btn-primary text-xs" onclick="window.enrichIncident('all')" title="Enrich with all configured APIs">Enrich All</button>
+                            <button class="btn-secondary text-xs" onclick="window.enrichIncident('shodan')" title="Enrich with Shodan only">Shodan</button>
+                            <button class="btn-secondary text-xs" onclick="window.enrichIncident('virustotal')" title="Enrich with VirusTotal only">VirusTotal</button>
+                            <button class="btn-secondary text-xs" onclick="window.enrichIncident('censys')" title="Enrich with Censys only">Censys</button>
+                            <button class="btn-secondary text-xs" onclick="window.enrichIncident('threat-intel')" title="Enrich with Threat Intel only">Threat Intel</button>
+                        </div>
+                    </div>
+                    <div id="incident-detail-ips" class="flex gap-2 mt-2" style="flex-wrap:wrap"></div>
+                </div>
+
+                <!-- Enrichment Data -->
+                <div id="incident-enrichment-section" class="card mb-4" style="display:none">
+                    <h3 class="chart-title">IP Enrichment Data</h3>
+                    <div id="incident-enrichment-data" class="space-y-4 mt-3"></div>
+                </div>
+
+                <!-- Linked Events -->
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-3">
+                        <h3 class="chart-title" style="margin-bottom:0">Linked Events</h3>
+                    </div>
+                    <div id="incident-detail-events">
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Type</th>
+                                        <th>Event ID</th>
+                                        <th>Timestamp</th>
+                                        <th>Details</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="incident-events-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Delete Incident -->
+                <div class="card">
+                    <h3 class="chart-title">Danger Zone</h3>
+                    <div class="flex items-center justify-between mt-2">
+                        <p class="text-sm text-gray-400">Delete this incident and all linked events permanently.</p>
+                        <button class="btn-secondary" style="background:#dc2626;border-color:#dc2626" onclick="window.deleteIncident()">Delete Incident</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- IP Detail Modal -->
+    <div id="ip-modal" class="modal-overlay hidden">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="flex items-center gap-3">
+                    <h2 id="modal-ip-title" class="text-lg font-semibold"></h2>
+                    <button id="modal-block-btn" class="btn-secondary"
+                        style="padding:3px 10px;font-size:0.75rem;color:#f87171;border-color:#f87171"
+                        onclick="blockIPFromModal()">Block IP</button>
+                    <button id="modal-create-incident-btn" class="btn-secondary"
+                        style="padding:3px 10px;font-size:0.75rem;color:#60a5fa;border-color:#60a5fa"
+                        onclick="createIncidentFromIP()">Create Incident</button>
+                </div>
+                <button id="modal-close" class="modal-close-btn">&times;</button>
+            </div>
+            <div id="modal-body" class="modal-body">
+                <!-- Summary row -->
+                <div id="modal-summary" class="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6"></div>
+
+                <!-- Intel + Map row -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                    <div class="card">
+                        <h3 class="chart-title">IP Intelligence</h3>
+                        <div id="modal-intel" class="text-sm space-y-1"></div>
+                    </div>
+                    <div class="card">
+                        <h3 class="chart-title">Geolocation</h3>
+                        <div id="modal-map" style="height:250px; border-radius:var(--radius-md); overflow:hidden;">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- External Enrichment -->
+                <div class="card mb-6">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="chart-title" style="margin-bottom:0">External Enrichment</h3>
+                        <button id="btn-enrich" class="btn-primary">Enrich Data</button>
+                    </div>
+                    <div id="enrich-status" class="text-sm text-gray-400 mb-4 hidden"></div>
+                    <div class="grid grid-cols-1 lg:grid-cols-4 gap-4">
+                        <div class="card" style="background:var(--color-surface);overflow:hidden;min-width:0">
+                            <h4 class="chart-title">Shodan</h4>
+                            <div id="modal-shodan" class="text-sm text-gray-400" style="overflow-wrap:break-word">No
+                                data yet</div>
+                        </div>
+                        <div class="card" style="background:var(--color-surface);overflow:hidden;min-width:0">
+                            <h4 class="chart-title">VirusTotal</h4>
+                            <div id="modal-virustotal" class="text-sm text-gray-400" style="overflow-wrap:break-word">No
+                                data yet</div>
+                        </div>
+                        <div class="card" style="background:var(--color-surface);overflow:hidden;min-width:0">
+                            <h4 class="chart-title">Censys</h4>
+                            <div id="modal-censys" class="text-sm text-gray-400" style="overflow-wrap:break-word">No
+                                data yet</div>
+                        </div>
+                        <div class="card" style="background:var(--color-surface);overflow:hidden;min-width:0">
+                            <h4 class="chart-title">Threat Intel</h4>
+                            <div id="modal-threat-intel" class="text-sm text-gray-400" style="overflow-wrap:break-word">
+                                No data yet</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity tabs -->
+                <div class="card">
+                    <div class="flex gap-2 mb-4">
+                        <button class="btn-secondary modal-tab active" data-tab="ssh">SSH Events</button>
+                        <button class="btn-secondary modal-tab" data-tab="http">HTTP Events</button>
+                        <button class="btn-secondary modal-tab" data-tab="brute">Brute Force</button>
+                        <button class="btn-secondary modal-tab" data-tab="portscan">Port Scans</button>
+                        <button class="btn-secondary modal-tab" data-tab="timeline">Timeline</button>
+                    </div>
+                    <div id="modal-tab-ssh" class="modal-tab-content">
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Type</th>
+                                        <th>Username</th>
+                                        <th>Port</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-ssh-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="modal-tab-http" class="modal-tab-content hidden">
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Method</th>
+                                        <th>Path</th>
+                                        <th>Status</th>
+                                        <th>Attack</th>
+                                        <th>Severity</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-http-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="modal-tab-brute" class="modal-tab-content hidden">
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Start</th>
+                                        <th>End</th>
+                                        <th>Attempts</th>
+                                        <th>Usernames</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-brute-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="modal-tab-portscan" class="modal-tab-content hidden">
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Detected At</th>
+                                        <th>Ports Hit</th>
+                                        <th>Ports</th>
+                                        <th>Status</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-portscan-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                    <div id="modal-tab-timeline" class="modal-tab-content hidden">
+                        <div id="modal-threat-score" class="mb-3"></div>
+                        <!-- 24h horizontal timeline chart -->
+                        <div class="card mb-4" style="background:var(--color-surface)">
+                            <h4 class="chart-title">24-Hour Attack Timeline</h4>
+                            <div style="height:220px; position:relative;">
+                                <div id="timeline-24h-chart" style="width:100%;height:100%"></div>
+                            </div>
+                            <div id="timeline-24h-summary" class="flex gap-4 mt-3 text-sm text-gray-400"></div>
+                        </div>
+                        <!-- Event table below -->
+                        <div class="overflow-x-auto">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Source</th>
+                                        <th>Detail</th>
+                                        <th>Severity</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="modal-timeline-body"></tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/static/app.js"></script>
+</body>
+
+</html>

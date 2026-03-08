@@ -1,0 +1,115 @@
+# DefenseWatch Configuration File
+# Copy this file to config.yaml and customize for your system
+
+server:
+  host: 127.0.0.1
+  port: 9000
+
+logs:
+  ssh:
+    - path: /var/log/auth.log
+      port: 22
+  http:
+    - path: /var/log/nginx/access.log
+      port: 443
+    # Add more vhost-specific logs as needed:
+    # - path: /var/log/nginx/example.com.access.log
+    #   port: 443
+  mysql: []
+  postgresql: []
+  mail: []
+  ftp: []
+
+detection:
+  ssh_brute_threshold: 5
+  ssh_brute_window_seconds: 300
+  http_scan_threshold: 20
+  http_scan_window_seconds: 60
+  portscan_threshold: 3
+  portscan_window_seconds: 300
+
+geoip:
+  mmdb_path: data/GeoLite2-City.mmdb
+  fallback_api: http://ip-api.com/json/{ip}?fields=status,message,country,countryCode,city,lat,lon,isp,org,as,asname,reverse
+  re_enrich_after_days: 7
+
+host:
+  name: my-server
+  # Set your server's coordinates for the attack map
+  # Example: New York City would be: latitude: 40.7128, longitude: -74.0060
+  latitude: 0.0
+  longitude: 0.0
+
+database:
+  path: data/defensewatch.db
+  wal_mode: true
+  retention_days: 30
+
+enrichment:
+  max_queue_size: 1000
+  worker_count: 3
+  whois_enabled: true
+
+notifications:
+  enabled: false
+  webhook_url: ''  # Set via DEFENSEWATCH_WEBHOOK_URL in .env
+  min_severity: high
+  cooldown_seconds: 300
+  notify_events:
+    - brute_force
+    - http_attack
+    - anomaly
+    - firewall_block
+
+telegram:
+  enabled: false
+  bot_token: ''  # Set via DEFENSEWATCH_TELEGRAM_BOT_TOKEN in .env
+  chat_ids: []   # Set via DEFENSEWATCH_TELEGRAM_CHAT_IDS in .env
+  min_severity: high
+  cooldown_seconds: 300
+  notify_events:
+    - brute_force
+    - http_attack
+    - firewall_block
+  daily_reports: false
+  weekly_reports: false
+  report_hour: 9
+
+threat_intel:
+  enabled: false
+  refresh_interval_hours: 6
+  abuseipdb_api_key: ''  # Set via DEFENSEWATCH_ABUSEIPDB_API_KEY in .env
+  otx_api_key: ''        # Set via DEFENSEWATCH_OTX_API_KEY in .env
+
+reports:
+  enabled: false
+  interval_hours: 24
+  webhook_url: ''  # Set via DEFENSEWATCH_REPORTS_WEBHOOK_URL in .env
+
+nuclei:
+  enabled: false
+  docker_image: projectdiscovery/nuclei:latest
+  severity_filter: low,medium,high,critical
+  rate_limit: 150
+  timeout_minutes: 30
+  extra_args: []
+
+firewall:
+  auto_block_enabled: false
+  ssh_block_threshold: 20
+  brute_session_block_threshold: 3
+  http_block_threshold: 100
+  score_block_threshold: 70
+  auto_block_window_seconds: 3600
+  auto_block_duration_hours: 0
+  check_interval_seconds: 300
+  whitelist:
+    - 127.0.0.1
+    - '::1'
+    # Add your trusted IPs here
+
+external_apis:
+  shodan_api_key: ''      # Set via DEFENSEWATCH_SHODAN_API_KEY in .env
+  virustotal_api_key: ''  # Set via DEFENSEWATCH_VIRUSTOTAL_API_KEY in .env
+  censys_api_id: ''       # Set via DEFENSEWATCH_CENSYS_API_ID in .env
+  censys_api_secret: ''   # Set via DEFENSEWATCH_CENSYS_API_SECRET in .env

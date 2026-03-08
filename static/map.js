@@ -1,0 +1,169 @@
+import { fetchJSON, countryFlag } from './utils.js';
+
+let map = null;
+let arcLayer = null;
+let hostMarker = null;
+let refreshTimer = null;
+
+export async function initMap() {
+    if (map) return;
+
+    map = L.map('attack-map', {
+        center: [30, 0],
+        zoom: 3,
+        minZoom: 3,
+        maxZoom: 12,
+        zoomControl: true,
+        attributionControl: false,
+    });
+
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        subdomains: 'abcd',
+        maxZoom: 19,
+    }).addTo(map);
+
+    arcLayer = L.layerGroup().addTo(map);
+
+    // Load host position
+    try {
+        const host = await fetchJSON('/api/map/host');
+        if (host.latitude && host.longitude) {
+            hostMarker = L.circleMarker([host.latitude, host.longitude], {
+                radius: 8,
+                fillColor: '#22c55e',
+                color: '#16a34a',
+                weight: 2,
+                opacity: 1,
+                fillOpacity: 0.8,
+            }).addTo(map);
+            hostMarker.bindPopup(`<b>${host.name || 'Server'}</b><br>Host Location`);
+        }
+    } catch (e) {
+        console.error('Failed to load host location:', e);
+    }
+
+    // Time range selector
+    document.getElementById('map-range')?.addEventListener('change', () => loadArcs());
+
+    // Auto-refresh every 30s to keep active states current
+    startAutoRefresh();
+}
+
+function getSelectedHours() {
+    return parseInt(document.getElementById('map-range')?.value || '6', 10);
+}
+
+function startAutoRefresh() {
+    stopAutoRefresh();
+    refreshTimer = setInterval(() => loadArcs(), 30000);
+}
+
+function stopAutoRefresh() {
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null; }
+}
+
+export async function loadArcs() {
+    if (!map || !arcLayer) return;
+    arcLayer.clearLayers();
+
+    const hours = getSelectedHours();
+
+    try {
+        const data = await fetchJSON(`/api/map/arcs?hours=${hours}`);
+        if (!data.arcs) return;
+
+        const countEl = document.getElementById('map-arc-count');
+        const activeCount = data.arcs.filter(a => a.active).length;
+        if (countEl) {
+            countEl.textContent = `${data.arcs.length} sources${activeCount ? ` · ${activeCount} active` : ''}`;
+        }
+
+        for (const arc of data.arcs) {
+            const color = arc.type === 'ssh' ? '#ef4444' :
+                arc.type === 'http' ? '#f97316' : '#eab308';
+            const opacity = arc.active ? 0.9 : Math.min(0.3 + Math.log10(arc.count + 1) * 0.2, 0.7);
+
+            // Draw curved line
+            const latlngs = computeArc(
+                [arc.src_lat, arc.src_lon],
+                [arc.dst_lat, arc.dst_lon]
+            );
+
+            const arcClasses = ['arc-path'];
+            if (arc.active) arcClasses.push('arc-active');
+
+            const polyline = L.polyline(latlngs, {
+                color: arc.active ? '#22c55e' : color,
+                weight: arc.active
+                    ? Math.min(2 + Math.log10(arc.count + 1), 5)
+                    : Math.min(1 + Math.log10(arc.count + 1), 4),
+                opacity: opacity,
+                smoothFactor: 1,
+                className: arcClasses.join(' '),
+            }).addTo(arcLayer);
+
+            const lastSeenStr = arc.last_seen
+                ? new Date(arc.last_seen * 1000).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+                : 'unknown';
+
+            polyline.bindPopup(`
+                <div class="text-sm">
+                    <b>${countryFlag(arc.country)} ${arc.ip}</b>
+                    ${arc.active ? ' <span style="color:#22c55e;font-weight:600;">● ACTIVE</span>' : ''}
+                    <br>
+                    ${arc.org || 'Unknown'}<br>
+                    SSH: ${arc.ssh_count} | HTTP: ${arc.http_count}<br>
+                    Total: ${arc.count} events<br>
+                    Last seen: ${lastSeenStr}
+                </div>
+            `);
+
+            // Source marker
+            const markerClasses = arc.active ? 'marker-active' : '';
+            const marker = L.circleMarker([arc.src_lat, arc.src_lon], {
+                radius: arc.active
+                    ? Math.min(5 + Math.log10(arc.count + 1) * 2, 10)
+                    : Math.min(3 + Math.log10(arc.count + 1) * 2, 8),
+                fillColor: arc.active ? '#22c55e' : color,
+                color: arc.active ? '#16a34a' : color,
+                weight: arc.active ? 2 : 1,
+                opacity: arc.active ? 1 : 0.7,
+                fillOpacity: arc.active ? 0.8 : 0.5,
+                className: markerClasses,
+            }).addTo(arcLayer);
+
+            marker.bindPopup(polyline.getPopup());
+        }
+    } catch (e) {
+        console.error('Failed to load arcs:', e);
+    }
+}
+
+function computeArc(start, end, numPoints = 30) {
+    const points = [];
+    for (let i = 0; i <= numPoints; i++) {
+        const t = i / numPoints;
+        const lat = start[0] + (end[0] - start[0]) * t;
+        const lon = start[1] + (end[1] - start[1]) * t;
+        // Add curvature
+        const altitude = Math.sin(Math.PI * t) * 15;
+        points.push([lat + altitude, lon]);
+    }
+    return points;
+}
+
+export function invalidateMap() {
+    if (map) {
+        setTimeout(() => map.invalidateSize(), 100);
+    }
+}
+
+let refreshDebounce = null;
+export function refreshMapOnEvent() {
+    if (!map || !arcLayer) return;
+    if (refreshDebounce) return;
+    refreshDebounce = setTimeout(() => {
+        refreshDebounce = null;
+        loadArcs();
+    }, 3000);
+}

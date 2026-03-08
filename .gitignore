@@ -1,0 +1,52 @@
+# Environment and secrets
+.env
+.env.local
+*.key
+*.pem
+*.crt
+secrets/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+venv/
+env/
+ENV/
+
+# Application data
+data/
+*.db
+*.db-shm
+*.db-wal
+config.yaml
+
+# Logs
+*.log
+output.log
+logs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# AI assistant
+CLAUDE.md
+.claude
+
+# Temporary files
+tmp/
+temp/
+*.tmp

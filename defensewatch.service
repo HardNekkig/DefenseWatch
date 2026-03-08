@@ -1,0 +1,17 @@
+[Unit]
+Description=DefenseWatch Host Intrusion Detection System
+After=network.target
+
+[Service]
+Type=simple
+User=YOUR_USERNAME
+Group=adm
+WorkingDirectory=/path/to/DefenseWatch
+ExecStart=/path/to/DefenseWatch/venv/bin/uvicorn defensewatch.main:app --host 127.0.0.1 --port 9000
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
