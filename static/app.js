@@ -3170,8 +3170,53 @@ async function checkAuth() {
 
 let hpPage = 0;
 const HP_LIMIT = 50;
+let _hpConfigCache = null;
+
+// Sub-tab switching
+document.querySelectorAll('[data-hptab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-hptab]').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.hptab-panel').forEach(p => p.classList.add('hidden'));
+        const panel = document.getElementById('hptab-' + btn.dataset.hptab);
+        if (panel) panel.classList.remove('hidden');
+        if (btn.dataset.hptab === 'config') loadHoneypotConfig();
+        if (btn.dataset.hptab === 'howto') renderRecommendedPaths();
+    });
+});
+
+const HP_RECOMMENDED = [
+    { path: '/.env', desc: 'Environment config with secrets' },
+    { path: '/wp-login.php', desc: 'WordPress login page' },
+    { path: '/wp-admin', desc: 'WordPress admin panel' },
+    { path: '/phpmyadmin', desc: 'phpMyAdmin database tool' },
+    { path: '/admin', desc: 'Generic admin panel' },
+    { path: '/administrator', desc: 'Joomla admin panel' },
+    { path: '/.git/config', desc: 'Git repository config' },
+    { path: '/config.php', desc: 'PHP configuration file' },
+    { path: '/xmlrpc.php', desc: 'WordPress XML-RPC endpoint' },
+    { path: '/wp-config.php', desc: 'WordPress database credentials' },
+    { path: '/backup.sql', desc: 'Database backup file' },
+    { path: '/.aws/credentials', desc: 'AWS access keys' },
+    { path: '/actuator', desc: 'Spring Boot actuator' },
+    { path: '/solr/admin', desc: 'Apache Solr admin' },
+    { path: '/manager/html', desc: 'Tomcat manager' },
+    { path: '/cgi-bin/', desc: 'CGI scripts directory' },
+    { path: '/.DS_Store', desc: 'macOS directory metadata' },
+    { path: '/server-status', desc: 'Apache server status' },
+    { path: '/api/v1/debug', desc: 'Debug API endpoint' },
+    { path: '/graphql', desc: 'GraphQL endpoint' },
+    { path: '/elmah.axd', desc: '.NET error log' },
+    { path: '/telescope', desc: 'Laravel Telescope debug' },
+    { path: '/.well-known/security.txt', desc: 'Security policy file' },
+];
 
 async function loadHoneypotView() {
+    // Pre-fetch config for the config/howto tabs
+    if (!_hpConfigCache) {
+        try { _hpConfigCache = await fetchJSON('/api/honeypot/config'); } catch {}
+    }
+
     try {
         const stats = await fetchJSON('/api/honeypot/stats');
         document.getElementById('hp-stat-total').textContent = formatNumber(stats.total_hits);
@@ -3226,6 +3271,144 @@ async function loadHoneypotEvents() {
 document.getElementById('hp-prev')?.addEventListener('click', () => { if (hpPage > 0) { hpPage--; loadHoneypotEvents(); } });
 document.getElementById('hp-next')?.addEventListener('click', () => { hpPage++; loadHoneypotEvents(); });
 document.getElementById('hp-filter-ip')?.addEventListener('change', () => { hpPage = 0; loadHoneypotEvents(); });
+
+// ── Honeypot Configuration ────────────────────────────────────────────
+
+async function loadHoneypotConfig() {
+    try {
+        const cfg = await fetchJSON('/api/honeypot/config');
+        _hpConfigCache = cfg;
+        document.getElementById('hp-cfg-enabled').checked = cfg.enabled;
+        document.getElementById('hp-cfg-autoblock').checked = cfg.auto_block;
+        document.getElementById('hp-cfg-score').value = cfg.score_boost;
+        document.getElementById('hp-cfg-score-range').value = cfg.score_boost;
+        renderHpPaths(cfg.paths || []);
+    } catch {}
+}
+
+function renderHpPaths(paths) {
+    const list = document.getElementById('hp-cfg-paths-list');
+    if (!paths.length) {
+        list.innerHTML = '<span class="text-gray-500 text-xs">No trap paths configured</span>';
+        return;
+    }
+    list.innerHTML = paths.map(p =>
+        `<div class="hp-path-item">
+            <code>${escapeHtml(p)}</code>
+            <button onclick="removeHpPath('${escapeHtml(p)}')" title="Remove">&times;</button>
+        </div>`
+    ).join('');
+}
+
+window.removeHpPath = function removeHpPath(path) {
+    const list = document.getElementById('hp-cfg-paths-list');
+    const items = Array.from(list.querySelectorAll('.hp-path-item code'));
+    const paths = items.map(el => el.textContent).filter(p => p !== path);
+    renderHpPaths(paths);
+}
+
+function getHpConfigPaths() {
+    const items = document.querySelectorAll('#hp-cfg-paths-list .hp-path-item code');
+    return Array.from(items).map(el => el.textContent);
+}
+
+document.getElementById('hp-cfg-add-path')?.addEventListener('click', () => {
+    const input = document.getElementById('hp-cfg-new-path');
+    let path = input.value.trim();
+    if (!path) return;
+    if (!path.startsWith('/')) path = '/' + path;
+    const current = getHpConfigPaths();
+    if (current.includes(path)) { input.value = ''; return; }
+    current.push(path);
+    renderHpPaths(current);
+    input.value = '';
+});
+
+document.getElementById('hp-cfg-new-path')?.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); document.getElementById('hp-cfg-add-path')?.click(); }
+});
+
+// Sync range/number inputs
+document.getElementById('hp-cfg-score-range')?.addEventListener('input', (e) => {
+    document.getElementById('hp-cfg-score').value = e.target.value;
+});
+document.getElementById('hp-cfg-score')?.addEventListener('input', (e) => {
+    const v = Math.max(0, Math.min(100, parseInt(e.target.value) || 0));
+    document.getElementById('hp-cfg-score-range').value = v;
+});
+
+document.getElementById('hp-cfg-save')?.addEventListener('click', async () => {
+    const statusEl = document.getElementById('hp-cfg-status');
+    statusEl.textContent = 'Saving...';
+    statusEl.style.color = 'var(--color-muted)';
+
+    const body = {
+        enabled: document.getElementById('hp-cfg-enabled').checked,
+        auto_block: document.getElementById('hp-cfg-autoblock').checked,
+        score_boost: parseInt(document.getElementById('hp-cfg-score').value) || 25,
+        paths: getHpConfigPaths(),
+    };
+
+    try {
+        const res = await fetch('/api/honeypot/config', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (!res.ok) throw new Error('Save failed');
+        const data = await res.json();
+        _hpConfigCache = data;
+        statusEl.textContent = 'Configuration saved';
+        statusEl.style.color = 'var(--color-green)';
+        setTimeout(() => { statusEl.textContent = ''; }, 3000);
+    } catch (e) {
+        statusEl.textContent = 'Failed to save: ' + e.message;
+        statusEl.style.color = 'var(--color-red)';
+    }
+});
+
+// ── Recommended paths (How It Works tab) ──────────────────────────────
+
+function renderRecommendedPaths() {
+    const container = document.getElementById('hp-recommended-paths');
+    if (!container) return;
+
+    const activePaths = _hpConfigCache?.paths || [];
+    container.innerHTML = HP_RECOMMENDED.map(r => {
+        const isActive = activePaths.includes(r.path);
+        return `<div class="hp-rec-item ${isActive ? 'active' : ''}">
+            <div>
+                <code>${escapeHtml(r.path)}</code>
+                <span class="text-xs text-gray-600 ml-2">${escapeHtml(r.desc)}</span>
+            </div>
+            ${isActive
+                ? '<span class="hp-rec-status" style="background:rgba(34,197,94,0.15);color:var(--color-green)">Active</span>'
+                : `<button class="btn-secondary" style="padding:0.2rem 0.6rem;font-size:0.65rem" onclick="addRecommendedPath('${escapeHtml(r.path)}')">Add</button>`
+            }
+        </div>`;
+    }).join('');
+}
+
+window.addRecommendedPath = async function addRecommendedPath(path) {
+    if (!_hpConfigCache) {
+        try { _hpConfigCache = await fetchJSON('/api/honeypot/config'); } catch { return; }
+    }
+    const paths = _hpConfigCache.paths || [];
+    if (paths.includes(path)) return;
+    paths.push(path);
+
+    try {
+        const res = await fetch('/api/honeypot/config', {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ paths }),
+        });
+        if (!res.ok) throw new Error();
+        const data = await res.json();
+        _hpConfigCache = data;
+        renderRecommendedPaths();
+    } catch {}
+}
 
 
 // ── Audit Log ─────────────────────────────────────────────────────────
@@ -3450,22 +3633,76 @@ async function loadSystemView() {
 async function loadSystemHealth() {
     try {
         const data = await fetchJSON('/api/health-monitor/status');
+
+        // Stat cards
         document.getElementById('sys-uptime').textContent = data.uptime || '-';
         document.getElementById('sys-db-size').textContent = data.db_size || '-';
         document.getElementById('sys-enrich-queue').textContent = data.enrichment_queue ?? '-';
         document.getElementById('sys-watchers').textContent = data.watchers_active ?? '-';
+        document.getElementById('sys-samples').textContent = data.total_samples ?? '-';
 
-        // Deadman alerts
+        // Event counters
+        const countersEl = document.getElementById('sys-event-counters');
+        const counters = data.event_counters || {};
+        const counterKeys = Object.keys(counters);
+        if (counterKeys.length) {
+            countersEl.innerHTML = counterKeys.map(k => `
+                <div class="flex justify-between items-center">
+                    <span class="text-gray-400">${escapeHtml(k)}</span>
+                    <span class="font-mono text-gray-200">${formatNumber(counters[k])}</span>
+                </div>
+            `).join('');
+        } else {
+            countersEl.innerHTML = '<span class="text-gray-500">No events processed yet</span>';
+        }
+
+        // Observer status
+        const obsBadge = document.getElementById('sys-observer-badge');
+        if (data.observer_alive) {
+            obsBadge.textContent = 'Running';
+            obsBadge.className = 'badge badge-accepted ml-1';
+        } else {
+            obsBadge.textContent = 'Stopped';
+            obsBadge.className = 'badge badge-critical ml-1';
+        }
+
+        // Watched files with last event info
+        const wfEl = document.getElementById('sys-watcher-files');
+        const watchedFiles = data.watched_files || [];
+        const lastEvents = data.watcher_last_events || {};
+        if (watchedFiles.length) {
+            const now = Date.now() / 1000;
+            wfEl.innerHTML = watchedFiles.map(fp => {
+                const last = lastEvents[fp];
+                let agoStr = 'no events yet';
+                let statusCls = 'text-gray-500';
+                if (last) {
+                    const ago = now - last;
+                    if (ago < 60) agoStr = `${Math.round(ago)}s ago`;
+                    else if (ago < 3600) agoStr = `${Math.round(ago / 60)}m ago`;
+                    else if (ago < 86400) agoStr = `${Math.round(ago / 3600)}h ago`;
+                    else agoStr = `${Math.round(ago / 86400)}d ago`;
+                    statusCls = ago < 300 ? 'text-green-400' : ago < 3600 ? 'text-yellow-400' : 'text-red-400';
+                }
+                return `<div class="flex justify-between items-center">
+                    <code class="text-xs text-gray-400" style="overflow:hidden;text-overflow:ellipsis;max-width:70%">${escapeHtml(fp)}</code>
+                    <span class="text-xs ${statusCls}">${agoStr}</span>
+                </div>`;
+            }).join('');
+        } else {
+            wfEl.innerHTML = '<span class="text-gray-500">No watchers configured</span>';
+        }
+
+        // Deadman table
         const deadmanAlerts = data.deadman_alerts || [];
-        document.getElementById('sys-deadman-count').textContent = deadmanAlerts.length;
         const tbody = document.getElementById('deadman-table-body');
         tbody.innerHTML = deadmanAlerts.map(a => `
             <tr>
                 <td class="font-mono text-xs">${escapeHtml(a.file_path || '-')}</td>
-                <td>${a.last_event_ago || '-'}</td>
+                <td>${escapeHtml(a.last_event_ago || '-')}</td>
                 <td>${a.status === 'alert' ? '<span class="badge badge-brute">ALERT</span>' : '<span class="badge badge-accepted">OK</span>'}</td>
             </tr>
-        `).join('') || '<tr><td colspan="3" class="text-gray-500 text-center">No deadman alerts</td></tr>';
+        `).join('') || '<tr><td colspan="3" class="text-gray-500 text-center">All watchers healthy</td></tr>';
     } catch (e) {
         console.error('Failed to load system health:', e);
     }
@@ -3479,12 +3716,16 @@ async function loadSystemHealth() {
             chart.setOption({
                 backgroundColor: 'transparent',
                 tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: rates.points.map(p => p.time), axisLabel: { color: '#9ca3af' } },
-                yAxis: { type: 'value', axisLabel: { color: '#9ca3af' } },
-                series: [{ data: rates.points.map(p => p.count), type: 'line', smooth: true, areaStyle: { opacity: 0.15 }, lineStyle: { color: '#3b82f6' }, itemStyle: { color: '#3b82f6' } }]
+                grid: { left: 40, right: 16, top: 10, bottom: 24 },
+                xAxis: { type: 'category', data: rates.points.map(p => p.time), axisLabel: { color: '#9ca3af', fontSize: 10 }, axisLine: { lineStyle: { color: '#374151' } } },
+                yAxis: { type: 'value', axisLabel: { color: '#9ca3af', fontSize: 10 }, splitLine: { lineStyle: { color: '#1f2937' } } },
+                series: [
+                    { name: 'SSH', data: rates.points.map(p => p.ssh_rate_5m), type: 'line', smooth: true, areaStyle: { opacity: 0.1 }, lineStyle: { color: '#ef4444', width: 1.5 }, itemStyle: { color: '#ef4444' }, symbol: 'none' },
+                    { name: 'HTTP', data: rates.points.map(p => p.http_rate_5m), type: 'line', smooth: true, areaStyle: { opacity: 0.1 }, lineStyle: { color: '#f97316', width: 1.5 }, itemStyle: { color: '#f97316' }, symbol: 'none' },
+                ]
             });
         } else {
-            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No event rate data</div>';
+            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No event rate data &mdash; samples are collected periodically</div>';
         }
     } catch (e) {
         document.getElementById('system-rate-chart').innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">Event rate data unavailable</div>';
@@ -3496,15 +3737,21 @@ async function loadSystemHealth() {
         const container = document.getElementById('system-db-chart');
         if (growth.points && growth.points.length) {
             const chart = echarts.init(container);
+            const formatBytes = (b) => {
+                if (b < 1024) return b + ' B';
+                if (b < 1024 * 1024) return (b / 1024).toFixed(1) + ' KB';
+                return (b / (1024 * 1024)).toFixed(1) + ' MB';
+            };
             chart.setOption({
                 backgroundColor: 'transparent',
-                tooltip: { trigger: 'axis' },
-                xAxis: { type: 'category', data: growth.points.map(p => p.time), axisLabel: { color: '#9ca3af' } },
-                yAxis: { type: 'value', axisLabel: { color: '#9ca3af' } },
-                series: [{ data: growth.points.map(p => p.size), type: 'line', smooth: true, areaStyle: { opacity: 0.15 }, lineStyle: { color: '#10b981' }, itemStyle: { color: '#10b981' } }]
+                tooltip: { trigger: 'axis', formatter: params => `${params[0].axisValue}<br>${formatBytes(params[0].value)}` },
+                grid: { left: 55, right: 16, top: 10, bottom: 24 },
+                xAxis: { type: 'category', data: growth.points.map(p => p.time), axisLabel: { color: '#9ca3af', fontSize: 10 }, axisLine: { lineStyle: { color: '#374151' } } },
+                yAxis: { type: 'value', axisLabel: { color: '#9ca3af', fontSize: 10, formatter: v => formatBytes(v) }, splitLine: { lineStyle: { color: '#1f2937' } } },
+                series: [{ data: growth.points.map(p => p.size), type: 'line', smooth: true, areaStyle: { opacity: 0.15 }, lineStyle: { color: '#10b981', width: 1.5 }, itemStyle: { color: '#10b981' }, symbol: 'none' }]
             });
         } else {
-            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No DB growth data</div>';
+            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No DB growth data &mdash; samples are collected periodically</div>';
         }
     } catch (e) {
         document.getElementById('system-db-chart').innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">DB growth data unavailable</div>';

@@ -13,6 +13,7 @@ __pycache__/
 *.pyd
 .Python
 venv/
+.venv/
 env/
 ENV/
 
@@ -25,7 +26,6 @@ config.yaml
 
 # Logs
 *.log
-output.log
 logs/
 
 # Testing
@@ -41,10 +41,6 @@ htmlcov/
 *.swo
 *~
 .DS_Store
-
-# AI assistant
-CLAUDE.md
-.claude
 
 # Temporary files
 tmp/

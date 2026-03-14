@@ -192,12 +192,47 @@ async def get_health_status():
     store = get_metrics_store()
     config = get_health_config()
 
-    # Get watched files from watcher manager
-    watched_files = []
+    # Get watcher info
+    watched_files: list[str] = []
+    watchers_active = 0
+    observer_alive = False
     try:
         from defensewatch.main import _watcher_manager
         if _watcher_manager:
-            watched_files = _watcher_manager.status.get("watched_files", [])
+            ws = _watcher_manager.status
+            watched_files = ws.get("watched_files", [])
+            watchers_active = ws.get("active_watchers", 0)
+            observer_alive = ws.get("observer_alive", False)
+    except Exception:
+        pass
+
+    # Uptime
+    uptime_seconds = 0
+    try:
+        from defensewatch.main import _start_time
+        if _start_time:
+            uptime_seconds = round(time.time() - _start_time, 1)
+    except Exception:
+        pass
+
+    # Enrichment queue depth (live, not from sample)
+    enrichment_queue = 0
+    try:
+        from defensewatch.main import _enrichment_pipeline
+        if _enrichment_pipeline:
+            enrichment_queue = _enrichment_pipeline.queue_depth
+    except Exception:
+        pass
+
+    # DB size (live)
+    db_size_bytes = 0
+    try:
+        db = get_db()
+        rows = await db.execute_fetchall("PRAGMA database_list")
+        if rows:
+            db_path = rows[0][2]
+            if db_path and os.path.exists(db_path):
+                db_size_bytes = os.path.getsize(db_path)
     except Exception:
         pass
 
@@ -209,9 +244,67 @@ async def get_health_status():
     samples = store.get_samples(last_n=1)
     latest = samples[0] if samples else {}
 
+    # Format uptime as human-readable
+    def _fmt_uptime(secs: float) -> str:
+        s = int(secs)
+        days, s = divmod(s, 86400)
+        hours, s = divmod(s, 3600)
+        minutes, s = divmod(s, 60)
+        parts = []
+        if days:
+            parts.append(f"{days}d")
+        if hours:
+            parts.append(f"{hours}h")
+        if minutes:
+            parts.append(f"{minutes}m")
+        if not parts:
+            parts.append(f"{s}s")
+        return " ".join(parts)
+
+    # Format bytes
+    def _fmt_bytes(b: int) -> str:
+        if b < 1024:
+            return f"{b} B"
+        if b < 1024 * 1024:
+            return f"{b / 1024:.1f} KB"
+        if b < 1024 * 1024 * 1024:
+            return f"{b / (1024 * 1024):.1f} MB"
+        return f"{b / (1024 * 1024 * 1024):.1f} GB"
+
+    # Deadman formatted
+    now = time.time()
+    formatted_deadman = []
+    for a in deadman_alerts:
+        ago = a["last_event_ago_seconds"]
+        formatted_deadman.append({
+            "file_path": a["file_path"],
+            "last_event_ago": _fmt_uptime(ago),
+            "last_event_ago_seconds": ago,
+            "status": "alert",
+        })
+    # Add watched files that have never seen events (informational)
+    alerted_files = {a["file_path"] for a in deadman_alerts}
+    for fp in watched_files:
+        if fp not in alerted_files:
+            last = watcher_last_events.get(fp)
+            formatted_deadman.append({
+                "file_path": fp,
+                "last_event_ago": _fmt_uptime(now - last) if last else "awaiting first event",
+                "last_event_ago_seconds": round(now - last) if last else None,
+                "status": "ok",
+            })
+
     return {
         "enabled": config.enabled,
-        "deadman_alerts": deadman_alerts,
+        "uptime": _fmt_uptime(uptime_seconds),
+        "uptime_seconds": uptime_seconds,
+        "db_size": _fmt_bytes(db_size_bytes),
+        "db_size_bytes": db_size_bytes,
+        "enrichment_queue": enrichment_queue,
+        "watchers_active": watchers_active,
+        "observer_alive": observer_alive,
+        "watched_files": watched_files,
+        "deadman_alerts": formatted_deadman,
         "event_counters": event_counts,
         "watcher_last_events": watcher_last_events,
         "latest_sample": latest,
@@ -224,10 +317,17 @@ async def get_db_growth(last: int = Query(60, ge=1, le=1440)):
     """Return DB size history for charting."""
     store = get_metrics_store()
     samples = store.get_samples(last_n=last)
+
+    def _fmt_ts(ts):
+        import datetime
+        return datetime.datetime.fromtimestamp(ts).strftime("%H:%M")
+
     return {
         "points": [
             {
+                "time": _fmt_ts(s["timestamp"]),
                 "timestamp": s["timestamp"],
+                "size": s.get("db_size_bytes", 0),
                 "db_size_bytes": s.get("db_size_bytes", 0),
                 "db_growth_bytes": s.get("db_growth_bytes", 0),
             }
@@ -241,10 +341,17 @@ async def get_event_rates(last: int = Query(60, ge=1, le=1440)):
     """Return event rate history for charting."""
     store = get_metrics_store()
     samples = store.get_samples(last_n=last)
+
+    def _fmt_ts(ts):
+        import datetime
+        return datetime.datetime.fromtimestamp(ts).strftime("%H:%M")
+
     return {
         "points": [
             {
+                "time": _fmt_ts(s["timestamp"]),
                 "timestamp": s["timestamp"],
+                "count": s.get("ssh_rate_5m", 0) + s.get("http_rate_5m", 0),
                 "ssh_rate_5m": s.get("ssh_rate_5m", 0),
                 "http_rate_5m": s.get("http_rate_5m", 0),
             }

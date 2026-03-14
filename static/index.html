@@ -220,11 +220,11 @@
             <div class="flex items-center justify-between mb-3">
                 <div class="flex items-center gap-4">
                     <h2 class="text-lg font-semibold">Attack Map</h2>
-                    <div class="flex items-center gap-2 text-xs text-gray-400">
-                        <span class="inline-block w-3 h-3 rounded-full bg-red-500"></span> SSH
-                        <span class="inline-block w-3 h-3 rounded-full bg-orange-500 ml-2"></span> HTTP
-                        <span class="inline-block w-3 h-3 rounded-full bg-yellow-500 ml-2"></span> Mixed
-                        <span class="inline-block w-3 h-3 rounded-full map-active-dot ml-2"></span> Active
+                    <div class="flex items-center gap-1 text-xs text-gray-400" id="map-filters">
+                        <button class="map-filter active" data-filter="ssh"><span class="inline-block w-3 h-3 rounded-full bg-red-500"></span> SSH</button>
+                        <button class="map-filter active" data-filter="http"><span class="inline-block w-3 h-3 rounded-full bg-orange-500"></span> HTTP</button>
+                        <button class="map-filter active" data-filter="mixed"><span class="inline-block w-3 h-3 rounded-full bg-yellow-500"></span> Mixed</button>
+                        <button class="map-filter active" data-filter="active"><span class="inline-block w-3 h-3 rounded-full map-active-dot"></span> Active</button>
                     </div>
                 </div>
                 <div class="flex items-center gap-2">
@@ -1532,64 +1532,267 @@
 
         <!-- Honeypot -->
         <section id="section-honeypot" class="section hidden">
-            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                <div class="stat-card">
-                    <div class="stat-label">Total Hits</div>
-                    <div class="stat-value" id="hp-stat-total">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Unique IPs</div>
-                    <div class="stat-value" id="hp-stat-ips">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Last 24h</div>
-                    <div class="stat-value" id="hp-stat-24h">-</div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-label">Auto-Blocked</div>
-                    <div class="stat-value" id="hp-stat-blocked">-</div>
-                </div>
+            <!-- Sub-tab bar -->
+            <div class="events-subtab-bar mb-4">
+                <button class="events-subtab active" data-hptab="activity">Activity</button>
+                <button class="events-subtab" data-hptab="config">Configuration</button>
+                <button class="events-subtab" data-hptab="howto">How It Works</button>
             </div>
 
-            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-                <div class="card">
-                    <h3 class="chart-title">Top Trap Paths</h3>
-                    <div id="hp-top-paths" class="space-y-2 text-sm"></div>
-                </div>
-                <div class="card">
-                    <h3 class="chart-title">Top Offending IPs</h3>
-                    <div id="hp-top-ips" class="space-y-2 text-sm"></div>
-                </div>
-            </div>
-
-            <div class="card">
-                <div class="flex items-center justify-between mb-4">
-                    <h3 class="chart-title" style="margin-bottom:0">Recent Honeypot Events</h3>
-                    <div class="flex items-center gap-2">
-                        <input type="text" id="hp-filter-ip" class="input-dark" placeholder="Filter IP..." style="width:140px">
+            <!-- ── Activity Tab ── -->
+            <div id="hptab-activity" class="hptab-panel">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <div class="stat-card">
+                        <div class="stat-label">Total Hits</div>
+                        <div class="stat-value" id="hp-stat-total">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Unique IPs</div>
+                        <div class="stat-value" id="hp-stat-ips">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Last 24h</div>
+                        <div class="stat-value" id="hp-stat-24h">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Auto-Blocked</div>
+                        <div class="stat-value" id="hp-stat-blocked">-</div>
                     </div>
                 </div>
-                <div class="overflow-x-auto">
-                    <table class="data-table">
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Source IP</th>
-                                <th>Method</th>
-                                <th>Path</th>
-                                <th>Status</th>
-                                <th>User Agent</th>
-                                <th>Country</th>
-                                <th>Blocked</th>
-                            </tr>
-                        </thead>
-                        <tbody id="hp-events-body"></tbody>
-                    </table>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                    <div class="card">
+                        <h3 class="chart-title">Top Trap Paths</h3>
+                        <div id="hp-top-paths" class="space-y-2 text-sm"></div>
+                    </div>
+                    <div class="card">
+                        <h3 class="chart-title">Top Offending IPs</h3>
+                        <div id="hp-top-ips" class="space-y-2 text-sm"></div>
+                    </div>
                 </div>
-                <div class="flex justify-between mt-3">
-                    <button id="hp-prev" class="btn-secondary" disabled>&laquo; Prev</button>
-                    <span id="hp-page-info" class="text-sm text-gray-400"></span>
-                    <button id="hp-next" class="btn-secondary">Next &raquo;</button>
+
+                <div class="card">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="chart-title" style="margin-bottom:0">Recent Honeypot Events</h3>
+                        <div class="flex items-center gap-2">
+                            <input type="text" id="hp-filter-ip" class="input-dark" placeholder="Filter IP..." style="width:140px">
+                        </div>
+                    </div>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Source IP</th>
+                                    <th>Method</th>
+                                    <th>Path</th>
+                                    <th>Status</th>
+                                    <th>User Agent</th>
+                                    <th>Country</th>
+                                    <th>Blocked</th>
+                                </tr>
+                            </thead>
+                            <tbody id="hp-events-body"></tbody>
+                        </table>
+                    </div>
+                    <div class="flex justify-between mt-3">
+                        <button id="hp-prev" class="btn-secondary" disabled>&laquo; Prev</button>
+                        <span id="hp-page-info" class="text-sm text-gray-400"></span>
+                        <button id="hp-next" class="btn-secondary">Next &raquo;</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── Configuration Tab ── -->
+            <div id="hptab-config" class="hptab-panel hidden">
+                <div class="card mb-4">
+                    <div class="flex items-center justify-between mb-4">
+                        <h3 class="chart-title" style="margin-bottom:0">Honeypot Settings</h3>
+                        <div class="flex items-center gap-3">
+                            <span class="text-sm text-gray-400">Enabled:</span>
+                            <label class="toggle-switch">
+                                <input type="checkbox" id="hp-cfg-enabled">
+                                <span class="toggle-slider"></span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                        <div class="card" style="background:var(--bg)">
+                            <h4 class="text-sm font-semibold text-gray-300 mb-3">Response Behaviour</h4>
+                            <div class="mb-3">
+                                <div class="flex items-center justify-between mb-2">
+                                    <label class="text-xs text-gray-500">Auto-block IPs on honeypot hit</label>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="hp-cfg-autoblock">
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                                <p class="text-xs text-gray-600">Automatically add a firewall DENY rule when an IP accesses a honeypot path.</p>
+                            </div>
+                            <div>
+                                <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Threat Score Boost (0 &ndash; 100)</label>
+                                <div class="flex items-center gap-3">
+                                    <input type="range" id="hp-cfg-score-range" min="0" max="100" step="5" value="25" style="flex:1;accent-color:var(--color-red)">
+                                    <input type="number" id="hp-cfg-score" class="input-dark" min="0" max="100" value="25" style="width:64px">
+                                </div>
+                                <p class="text-xs text-gray-600 mt-1">Points added to an IP's threat score for each honeypot hit. Multiple distinct paths increase the boost further (up to 50).</p>
+                            </div>
+                        </div>
+
+                        <div class="card" style="background:var(--bg)">
+                            <h4 class="text-sm font-semibold text-gray-300 mb-3">Trap Paths</h4>
+                            <p class="text-xs text-gray-600 mb-2">Each path is registered as a route that returns a realistic decoy response. Add paths attackers commonly probe for.</p>
+                            <div id="hp-cfg-paths-list" class="space-y-1 mb-3" style="max-height:220px;overflow-y:auto"></div>
+                            <div class="flex gap-2">
+                                <input type="text" id="hp-cfg-new-path" class="input-dark" placeholder="/secret-admin" style="flex:1">
+                                <button id="hp-cfg-add-path" class="btn-primary" style="padding:0.4rem 0.8rem;font-size:0.75rem">Add</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="flex justify-end">
+                        <button id="hp-cfg-save" class="btn-primary">Save Configuration</button>
+                    </div>
+                    <div id="hp-cfg-status" class="text-xs mt-2" style="text-align:right"></div>
+                </div>
+
+                <!-- Response preview -->
+                <div class="card">
+                    <h3 class="chart-title">Decoy Response Preview</h3>
+                    <p class="text-xs text-gray-500 mb-4">This is what attackers see when they hit a honeypot path. The response type depends on the path.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="card" style="background:var(--bg)">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="badge badge-warning">200</span>
+                                <code class="text-xs text-gray-300">/wp-login.php</code>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Returns a convincing WordPress login page. Attackers who submit credentials get logged.</p>
+                            <div style="background:#1a1a2e;border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:0.5rem;font-size:0.65rem;color:#8b8fa3;max-height:100px;overflow:hidden">
+                                &lt;html&gt;&lt;head&gt;&lt;title&gt;Log In &mdash; WordPress&lt;/title&gt;&lt;/head&gt;<br>
+                                &lt;body&gt;&lt;div class="login"&gt;&lt;h1&gt;WordPress&lt;/h1&gt;<br>
+                                &lt;form&gt;&lt;input name="log"&gt;&lt;input name="pwd"&gt;<br>
+                                &lt;input type="submit" value="Log In"&gt;&lt;/form&gt;...
+                            </div>
+                        </div>
+                        <div class="card" style="background:var(--bg)">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="badge badge-critical">403</span>
+                                <code class="text-xs text-gray-300">/.env, /phpmyadmin, /wp-admin ...</code>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Returns a "Forbidden" response. Suggests the resource exists but is protected &mdash; baiting further probing.</p>
+                            <div style="background:#1a1a2e;border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:0.5rem;font-size:0.65rem;color:#8b8fa3">
+                                HTTP/1.1 403 Forbidden<br>
+                                Content-Type: text/plain<br><br>
+                                Forbidden
+                            </div>
+                        </div>
+                        <div class="card" style="background:var(--bg)">
+                            <div class="flex items-center gap-2 mb-2">
+                                <span class="badge badge-medium">404</span>
+                                <code class="text-xs text-gray-300">All other paths</code>
+                            </div>
+                            <p class="text-xs text-gray-500 mb-2">Returns a generic "Not Found". Still silently logged and scored &mdash; any access to a trap path is suspicious.</p>
+                            <div style="background:#1a1a2e;border:1px solid var(--color-border);border-radius:var(--radius-sm);padding:0.5rem;font-size:0.65rem;color:#8b8fa3">
+                                HTTP/1.1 404 Not Found<br>
+                                Content-Type: text/plain<br><br>
+                                Not Found
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── How It Works Tab ── -->
+            <div id="hptab-howto" class="hptab-panel hidden">
+                <div class="card mb-4">
+                    <h3 class="chart-title">How the Honeypot Works</h3>
+                    <p class="text-sm text-gray-400 mb-4">The honeypot registers fake paths on your server that look like real vulnerabilities. When an attacker (or scanner) requests one, DefenseWatch silently logs the hit, enriches the IP, boosts the threat score, and optionally blocks the IP &mdash; all without exposing any real service.</p>
+
+                    <!-- Flow diagram -->
+                    <div class="hp-flow">
+                        <div class="hp-flow-step">
+                            <div class="hp-flow-icon" style="background:rgba(239,68,68,0.15);color:var(--color-red)">1</div>
+                            <div>
+                                <div class="text-sm font-semibold text-gray-200">Attacker Probes</div>
+                                <div class="text-xs text-gray-500">A bot or attacker requests a common path like <code>/wp-login.php</code>, <code>/.env</code>, or <code>/phpmyadmin</code>.</div>
+                            </div>
+                        </div>
+                        <div class="hp-flow-arrow"></div>
+                        <div class="hp-flow-step">
+                            <div class="hp-flow-icon" style="background:rgba(251,191,36,0.15);color:var(--color-yellow)">2</div>
+                            <div>
+                                <div class="text-sm font-semibold text-gray-200">Trap Triggered</div>
+                                <div class="text-xs text-gray-500">DefenseWatch intercepts the request before it reaches static files. It serves a realistic decoy response (login form, 403, or 404).</div>
+                            </div>
+                        </div>
+                        <div class="hp-flow-arrow"></div>
+                        <div class="hp-flow-step">
+                            <div class="hp-flow-icon" style="background:rgba(59,130,246,0.15);color:var(--color-blue)">3</div>
+                            <div>
+                                <div class="text-sm font-semibold text-gray-200">Event Logged</div>
+                                <div class="text-xs text-gray-500">The hit is recorded with IP, method, User-Agent, headers, and timestamp. The IP is auto-linked to threat intelligence enrichment.</div>
+                            </div>
+                        </div>
+                        <div class="hp-flow-arrow"></div>
+                        <div class="hp-flow-step">
+                            <div class="hp-flow-icon" style="background:rgba(168,85,247,0.15);color:#a855f7">4</div>
+                            <div>
+                                <div class="text-sm font-semibold text-gray-200">Score Boosted</div>
+                                <div class="text-xs text-gray-500">The IP's threat score increases by the configured boost (default +25). Hitting multiple distinct paths raises it further (up to +50).</div>
+                            </div>
+                        </div>
+                        <div class="hp-flow-arrow"></div>
+                        <div class="hp-flow-step">
+                            <div class="hp-flow-icon" style="background:rgba(34,197,94,0.15);color:var(--color-green)">5</div>
+                            <div>
+                                <div class="text-sm font-semibold text-gray-200">Response Triggered</div>
+                                <div class="text-xs text-gray-500">If auto-block is on, the IP is immediately firewalled. The event is broadcast to the dashboard via WebSocket and can trigger playbook actions.</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div class="card">
+                        <h3 class="chart-title">Integrations</h3>
+                        <div class="space-y-3 text-sm">
+                            <div class="flex gap-3 items-start">
+                                <span style="font-size:1.1rem;line-height:1">&#x1f6e1;</span>
+                                <div>
+                                    <span class="text-gray-200 font-medium">Firewall</span>
+                                    <p class="text-xs text-gray-500 mt-0.5">When auto-block is enabled, honeypot hits create instant DENY rules. Manual blocks are also available from the events table.</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start">
+                                <span style="font-size:1.1rem;line-height:1">&#x1f4ca;</span>
+                                <div>
+                                    <span class="text-gray-200 font-medium">Threat Scoring</span>
+                                    <p class="text-xs text-gray-500 mt-0.5">Every honeypot hit adds points to the IP's score. The score boost is configurable (0&ndash;100). More diverse paths = higher boost.</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start">
+                                <span style="font-size:1.1rem;line-height:1">&#x1f4d6;</span>
+                                <div>
+                                    <span class="text-gray-200 font-medium">Playbooks</span>
+                                    <p class="text-xs text-gray-500 mt-0.5">The built-in <code>honeypot_repeat_offender</code> playbook auto-blocks and creates incidents for IPs with 3+ honeypot hits.</p>
+                                </div>
+                            </div>
+                            <div class="flex gap-3 items-start">
+                                <span style="font-size:1.1rem;line-height:1">&#x1f514;</span>
+                                <div>
+                                    <span class="text-gray-200 font-medium">Notifications</span>
+                                    <p class="text-xs text-gray-500 mt-0.5">Honeypot hits are broadcast via WebSocket and can trigger Telegram alerts and webhook notifications.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card">
+                        <h3 class="chart-title">Recommended Trap Paths</h3>
+                        <p class="text-xs text-gray-500 mb-3">Common paths that automated scanners and attackers probe. Click to add any missing ones to your configuration.</p>
+                        <div id="hp-recommended-paths" class="space-y-1 text-sm"></div>
+                    </div>
                 </div>
             </div>
         </section>
@@ -1815,28 +2018,53 @@
                         <div class="stat-value" id="sys-watchers">-</div>
                     </div>
                     <div class="stat-card">
-                        <div class="stat-label">Deadman Alerts</div>
-                        <div class="stat-value" id="sys-deadman-count">-</div>
+                        <div class="stat-label">Metric Samples</div>
+                        <div class="stat-value" id="sys-samples">-</div>
                     </div>
                 </div>
 
-                <div class="card mb-4">
-                    <h3 class="chart-title mb-3">Event Rate</h3>
-                    <div id="system-rate-chart" style="height:200px"></div>
+                <!-- Event counters + Observer status -->
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                    <div class="card">
+                        <h3 class="chart-title mb-3">Event Counters</h3>
+                        <p class="text-xs text-gray-600 mb-2">Total events processed since startup, by type.</p>
+                        <div id="sys-event-counters" class="space-y-2 text-sm">
+                            <span class="text-gray-500">Loading...</span>
+                        </div>
+                    </div>
+                    <div class="card">
+                        <h3 class="chart-title mb-3">Watcher Status</h3>
+                        <p class="text-xs text-gray-600 mb-2">File observer and per-file watcher health.</p>
+                        <div class="mb-3">
+                            <span class="text-xs text-gray-500">File Observer:</span>
+                            <span id="sys-observer-badge" class="badge ml-1">-</span>
+                        </div>
+                        <div id="sys-watcher-files" class="space-y-1 text-sm">
+                            <span class="text-gray-500">Loading...</span>
+                        </div>
+                    </div>
                 </div>
-                <div class="card mb-4">
-                    <h3 class="chart-title mb-3">DB Growth</h3>
-                    <div id="system-db-chart" style="height:200px"></div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                    <div class="card">
+                        <h3 class="chart-title mb-3">Event Rate (5-min window)</h3>
+                        <div id="system-rate-chart" style="height:200px"></div>
+                    </div>
+                    <div class="card">
+                        <h3 class="chart-title mb-3">DB Growth</h3>
+                        <div id="system-db-chart" style="height:200px"></div>
+                    </div>
                 </div>
 
                 <div class="card">
-                    <h3 class="chart-title mb-3">Deadman Alerts</h3>
+                    <h3 class="chart-title mb-3">File Watchers &mdash; Deadman Check</h3>
+                    <p class="text-xs text-gray-600 mb-3">Monitors whether each watched file is still producing events. A stale watcher may indicate a stopped service or log rotation issue.</p>
                     <div class="overflow-x-auto">
                         <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>File Path</th>
-                                    <th>Last Event Ago</th>
+                                    <th>Last Event</th>
                                     <th>Status</th>
                                 </tr>
                             </thead>

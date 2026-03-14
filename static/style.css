@@ -86,7 +86,7 @@ nav {
   justify-content: space-between;
   position: sticky;
   top: 0;
-  z-index: 50;
+  z-index: 10001;
   box-shadow: 0 4px 30px rgba(0, 0, 0, 0.5);
 }
 
@@ -1082,6 +1082,36 @@ select.input-dark option {
   animation: marker-pulse 1.2s ease-in-out infinite;
 }
 
+/* Map filter buttons */
+.map-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.25rem 0.6rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-family: var(--font-sans);
+  transition: opacity var(--transition), background var(--transition), border-color var(--transition);
+}
+
+.map-filter:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.map-filter.active {
+  color: var(--color-text);
+  border-color: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.map-filter:not(.active) {
+  opacity: 0.4;
+}
+
 /* ── Section headings ────────────────────────────────────── */
 h2.text-lg {
   font-size: 1rem;
@@ -1261,6 +1291,100 @@ h2.text-lg {
 
 .evtab-panel.hidden {
   display: none;
+}
+
+.hptab-panel {
+  display: block;
+}
+
+.hptab-panel.hidden {
+  display: none;
+}
+
+/* Honeypot flow diagram */
+.hp-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0.5rem 0;
+}
+
+.hp-flow-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 1rem;
+  padding: 0.75rem 0;
+}
+
+.hp-flow-icon {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 0.8rem;
+}
+
+.hp-flow-arrow {
+  width: 2px;
+  height: 16px;
+  margin-left: 15px;
+  background: var(--color-border);
+}
+
+.hp-path-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--color-border);
+  font-size: 0.75rem;
+}
+
+.hp-path-item code {
+  color: var(--color-text);
+}
+
+.hp-path-item button {
+  background: none;
+  border: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 0 0.25rem;
+  line-height: 1;
+}
+
+.hp-path-item button:hover {
+  color: var(--color-red);
+}
+
+.hp-rec-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-sm);
+}
+
+.hp-rec-item code {
+  color: var(--color-muted);
+  font-size: 0.75rem;
+}
+
+.hp-rec-item.active code {
+  color: var(--color-green);
+}
+
+.hp-rec-item .hp-rec-status {
+  font-size: 0.65rem;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
 }
 
 .fwtab-panel {
