@@ -1,10 +1,21 @@
-import { fetchJSON, formatTime, formatTimeShort, countryFlag, severityBadge, eventTypeBadge, truncate, formatNumber, escapeHtml } from './utils.js';
+import { fetchJSON, formatTime, formatTimeShort, countryFlag, severityBadge, eventTypeBadge, truncate, formatNumber, escapeHtml, getAuthToken, setAuthToken, clearAuthToken, getAuthHeaders, postJSON, patchJSON } from './utils.js';
 import { LiveSocket } from './ws.js';
 import { initCharts, updateSSHTimeline, updateHTTPTimeline, updateCountries, updateAttackTypes, updateUsernames, updateEndpoints, updateASNs } from './charts.js';
 import { initMap, loadArcs, invalidateMap, refreshMapOnEvent } from './map.js';
 
+// ── Auth: patch global fetch to inject Bearer token for /api calls ──
+const _origFetch = window.fetch;
+window.fetch = function(url, opts = {}) {
+    const token = getAuthToken();
+    if (token && typeof url === 'string' && url.startsWith('/api')) {
+        opts.headers = { ...(opts.headers || {}), 'Authorization': `Bearer ${token}` };
+    }
+    return _origFetch.call(this, url, opts);
+};
+
 // State
 let currentSection = 'dashboard';
+let authEnabled = false;
 let sshPage = 1, httpPage = 1, intelPage = 1, incidentPage = 1, svcPage = 1;
 let mapInitialized = false;
 let currentEvtab = 'ssh';
@@ -13,7 +24,15 @@ let currentEvtab = 'ssh';
 document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.addEventListener('click', () => {
         const section = btn.dataset.section;
-        showSection(section);
+        if (section) showSection(section);
+    });
+});
+
+// Navigation dropdown items
+document.querySelectorAll('.nav-dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+        const section = item.dataset.section;
+        if (section) showSection(section);
     });
 });
 
@@ -21,7 +40,10 @@ function showSection(name) {
     currentSection = name;
     document.querySelectorAll('.section').forEach(s => s.classList.add('hidden'));
     document.getElementById(`section-${name}`)?.classList.remove('hidden');
+
+    // Update active state for both nav buttons and dropdown items
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.toggle('active', b.dataset.section === name));
+    document.querySelectorAll('.nav-dropdown-item').forEach(b => b.classList.toggle('active', b.dataset.section === name));
 
     if (name === 'map') {
         if (!mapInitialized) {
@@ -40,6 +62,16 @@ function showSection(name) {
         loadScannerView();
     } else if (name === 'firewall') {
         loadFirewallView();
+    } else if (name === 'honeypot') {
+        loadHoneypotView();
+    } else if (name === 'audit') {
+        loadAuditView();
+    } else if (name === 'playbooks') {
+        loadPlaybooksView();
+    } else if (name === 'geo-policy') {
+        loadGeoPolicyView();
+    } else if (name === 'system') {
+        loadSystemView();
     } else if (name === 'settings') {
         loadSettingsView();
     }
@@ -330,6 +362,7 @@ async function loadHTTPEvents() {
                 <td>${(e.attack_types || []).map(t => `<span class="badge badge-low mr-1">${t}</span>`).join('')}</td>
                 <td>${severityBadge(e.severity)}</td>
                 <td class="text-gray-500">${e.scanner_name || '-'}</td>
+                <td>${uaClassBadge(e.ua_class)}</td>
             </tr>
         `).join('');
 
@@ -3043,6 +3076,467 @@ document.getElementById('tg-enabled-toggle')?.addEventListener('change', async (
     }
 });
 
+// ── Auth ──────────────────────────────────────────────────────────────
+
+function showLoginOverlay() {
+    const overlay = document.getElementById('login-overlay');
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+}
+
+function hideLoginOverlay() {
+    const overlay = document.getElementById('login-overlay');
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+}
+
+function updateUserMenu() {
+    const menu = document.getElementById('user-menu');
+    const display = document.getElementById('user-display');
+    const user = JSON.parse(localStorage.getItem('dw_user') || 'null');
+    if (user && authEnabled) {
+        menu.classList.remove('hidden');
+        menu.style.display = '';
+        display.textContent = `${user.username} (${user.role})`;
+    } else {
+        menu.classList.add('hidden');
+        menu.style.display = 'none';
+    }
+}
+
+document.getElementById('login-form')?.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const username = document.getElementById('login-username').value;
+    const password = document.getElementById('login-password').value;
+    const errorEl = document.getElementById('login-error');
+    errorEl.classList.add('hidden');
+    try {
+        const data = await postJSON('/api/auth/login', { username, password });
+        setAuthToken(data.access_token);
+        localStorage.setItem('dw_user', JSON.stringify(data.user));
+        localStorage.setItem('dw_refresh_token', data.refresh_token);
+        hideLoginOverlay();
+        updateUserMenu();
+        init();
+    } catch (err) {
+        errorEl.textContent = 'Invalid username or password';
+        errorEl.classList.remove('hidden');
+    }
+});
+
+document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    try { await postJSON('/api/auth/logout', {}); } catch {}
+    clearAuthToken();
+    localStorage.removeItem('dw_refresh_token');
+    localStorage.removeItem('dw_user');
+    updateUserMenu();
+    if (authEnabled) {
+        showLoginOverlay();
+    }
+});
+
+window.addEventListener('dw-auth-required', () => {
+    if (authEnabled) showLoginOverlay();
+});
+
+async function checkAuth() {
+    try {
+        // Check if auth is enabled by trying the /me endpoint
+        const resp = await _origFetch('/api/auth/me', { headers: getAuthHeaders() });
+        if (resp.status === 401) {
+            // Auth is enabled but no valid token
+            authEnabled = true;
+            showLoginOverlay();
+            return false;
+        }
+        const data = await resp.json();
+        if (data.username === 'system' && data.role === 'admin' && data.id === 0) {
+            // Auth disabled - synthetic user
+            authEnabled = false;
+        } else {
+            authEnabled = true;
+            localStorage.setItem('dw_user', JSON.stringify(data));
+        }
+        updateUserMenu();
+        return true;
+    } catch {
+        // Server likely down or auth not configured
+        return true;
+    }
+}
+
+
+// ── Honeypot ──────────────────────────────────────────────────────────
+
+let hpPage = 0;
+const HP_LIMIT = 50;
+
+async function loadHoneypotView() {
+    try {
+        const stats = await fetchJSON('/api/honeypot/stats');
+        document.getElementById('hp-stat-total').textContent = formatNumber(stats.total_hits);
+        document.getElementById('hp-stat-ips').textContent = formatNumber(stats.unique_ips);
+        document.getElementById('hp-stat-24h').textContent = formatNumber(stats.hits_24h);
+        document.getElementById('hp-stat-blocked').textContent = formatNumber(stats.auto_blocked);
+
+        const pathsEl = document.getElementById('hp-top-paths');
+        pathsEl.innerHTML = (stats.top_paths || []).map(p =>
+            `<div class="flex justify-between"><code class="text-gray-300">${escapeHtml(p.path)}</code><span class="text-gray-500">${p.count}</span></div>`
+        ).join('') || '<span class="text-gray-500">No data yet</span>';
+
+        const ipsEl = document.getElementById('hp-top-ips');
+        ipsEl.innerHTML = (stats.top_ips || []).map(i =>
+            `<div class="flex justify-between"><span><a href="#" class="ip-link" data-ip="${escapeHtml(i.ip)}">${escapeHtml(i.ip)}</a> ${countryFlag(i.country_code)}</span><span class="text-gray-500">${i.count}</span></div>`
+        ).join('') || '<span class="text-gray-500">No data yet</span>';
+    } catch {}
+
+    loadHoneypotEvents();
+}
+
+async function loadHoneypotEvents() {
+    const ip = document.getElementById('hp-filter-ip')?.value || '';
+    const offset = hpPage * HP_LIMIT;
+    let url = `/api/honeypot/events?limit=${HP_LIMIT}&offset=${offset}`;
+    if (ip) url += `&ip=${encodeURIComponent(ip)}`;
+
+    try {
+        const data = await fetchJSON(url);
+        const tbody = document.getElementById('hp-events-body');
+        tbody.innerHTML = data.events.map(e =>
+            `<tr>
+                <td>${formatTime(e.timestamp)}</td>
+                <td><a href="#" class="ip-link" data-ip="${escapeHtml(e.source_ip)}">${escapeHtml(e.source_ip)}</a></td>
+                <td>${escapeHtml(e.method)}</td>
+                <td><code>${escapeHtml(e.path)}</code></td>
+                <td>${e.status_code}</td>
+                <td class="text-xs">${truncate(e.user_agent, 50)}</td>
+                <td>${countryFlag(e.country_code)} ${e.country_code || ''}</td>
+                <td>${e.auto_blocked ? '<span class="badge badge-critical">Yes</span>' : '-'}</td>
+            </tr>`
+        ).join('') || '<tr><td colspan="8" class="text-center text-gray-500">No honeypot events</td></tr>';
+
+        const total = data.total;
+        const pageInfo = document.getElementById('hp-page-info');
+        pageInfo.textContent = `${offset + 1}-${Math.min(offset + HP_LIMIT, total)} of ${total}`;
+        document.getElementById('hp-prev').disabled = hpPage === 0;
+        document.getElementById('hp-next').disabled = (offset + HP_LIMIT) >= total;
+    } catch {}
+}
+
+document.getElementById('hp-prev')?.addEventListener('click', () => { if (hpPage > 0) { hpPage--; loadHoneypotEvents(); } });
+document.getElementById('hp-next')?.addEventListener('click', () => { hpPage++; loadHoneypotEvents(); });
+document.getElementById('hp-filter-ip')?.addEventListener('change', () => { hpPage = 0; loadHoneypotEvents(); });
+
+
+// ── Audit Log ─────────────────────────────────────────────────────────
+
+let auditPage = 0;
+const AUDIT_LIMIT = 50;
+
+async function loadAuditView() {
+    loadAuditEvents();
+}
+
+async function loadAuditEvents() {
+    const action = document.getElementById('audit-filter-action')?.value || '';
+    const actor = document.getElementById('audit-filter-actor')?.value || '';
+    const offset = auditPage * AUDIT_LIMIT;
+    let url = `/api/audit?limit=${AUDIT_LIMIT}&offset=${offset}`;
+    if (action) url += `&action=${encodeURIComponent(action)}`;
+    if (actor) url += `&actor=${encodeURIComponent(actor)}`;
+
+    try {
+        const data = await fetchJSON(url);
+        const tbody = document.getElementById('audit-events-body');
+        tbody.innerHTML = data.entries.map(e =>
+            `<tr>
+                <td>${formatTime(e.timestamp)}</td>
+                <td>${escapeHtml(e.actor)}</td>
+                <td><span class="badge badge-info">${escapeHtml(e.action)}</span></td>
+                <td>${escapeHtml(e.target)}</td>
+                <td class="text-xs">${truncate(e.detail, 60)}</td>
+                <td>${escapeHtml(e.ip_address) || '-'}</td>
+            </tr>`
+        ).join('') || '<tr><td colspan="6" class="text-center text-gray-500">No audit entries</td></tr>';
+
+        const total = data.total;
+        const pageInfo = document.getElementById('audit-page-info');
+        pageInfo.textContent = `${Math.min(offset + 1, total)}-${Math.min(offset + AUDIT_LIMIT, total)} of ${total}`;
+        document.getElementById('audit-prev').disabled = auditPage === 0;
+        document.getElementById('audit-next').disabled = (offset + AUDIT_LIMIT) >= total;
+    } catch {}
+}
+
+document.getElementById('audit-prev')?.addEventListener('click', () => { if (auditPage > 0) { auditPage--; loadAuditEvents(); } });
+document.getElementById('audit-next')?.addEventListener('click', () => { auditPage++; loadAuditEvents(); });
+document.getElementById('audit-filter-action')?.addEventListener('change', () => { auditPage = 0; loadAuditEvents(); });
+document.getElementById('audit-filter-actor')?.addEventListener('change', () => { auditPage = 0; loadAuditEvents(); });
+
+
+// ── Playbooks ─────────────────────────────────────────────────────────
+
+let pbPage = 0;
+const PB_LIMIT = 20;
+
+async function loadPlaybooksView() {
+    try {
+        const status = await fetchJSON('/api/playbooks/status');
+        document.getElementById('pb-stat-enabled').textContent = status.enabled ? 'Yes' : 'No';
+        document.getElementById('pb-stat-interval').textContent = status.check_interval || '-';
+        document.getElementById('pb-stat-rules').textContent = formatNumber(status.rules?.length || 0);
+        document.getElementById('pb-stat-cooldowns').textContent = formatNumber(status.cooldown_entries || 0);
+
+        const rulesBody = document.getElementById('pb-rules-body');
+        rulesBody.innerHTML = (status.rules || []).map(r =>
+            `<tr>
+                <td>${escapeHtml(r.name)}</td>
+                <td>${escapeHtml(r.description || '')}</td>
+                <td class="text-xs"><code>${escapeHtml(r.condition || '')}</code></td>
+                <td class="text-xs">${escapeHtml((r.actions || []).join(', '))}</td>
+                <td>${escapeHtml(String(r.cooldown || '-'))}</td>
+            </tr>`
+        ).join('') || '<tr><td colspan="5" class="text-center text-gray-500">No playbook rules configured</td></tr>';
+    } catch {}
+
+    loadPlaybookExecutions();
+}
+
+async function loadPlaybookExecutions() {
+    const offset = pbPage * PB_LIMIT;
+    try {
+        const data = await fetchJSON(`/api/playbooks/executions?limit=${PB_LIMIT}&offset=${offset}`);
+        const tbody = document.getElementById('pb-exec-body');
+        tbody.innerHTML = (data.executions || []).map(e =>
+            `<tr>
+                <td>${formatTime(e.timestamp)}</td>
+                <td>${escapeHtml(e.rule_name || '')}</td>
+                <td><a href="#" class="ip-link" data-ip="${escapeHtml(e.source_ip || '')}">${escapeHtml(e.source_ip || '-')}</a></td>
+                <td class="text-xs">${escapeHtml((e.actions_taken || []).join(', '))}</td>
+                <td class="text-xs">${truncate(e.detail || '', 60)}</td>
+            </tr>`
+        ).join('') || '<tr><td colspan="5" class="text-center text-gray-500">No executions yet</td></tr>';
+
+        const total = data.total || 0;
+        const pageInfo = document.getElementById('pb-page-info');
+        pageInfo.textContent = total > 0 ? `${offset + 1}-${Math.min(offset + PB_LIMIT, total)} of ${total}` : '0 of 0';
+        document.getElementById('pb-prev').disabled = pbPage === 0;
+        document.getElementById('pb-next').disabled = (offset + PB_LIMIT) >= total;
+    } catch {}
+}
+
+document.getElementById('pb-prev')?.addEventListener('click', () => { if (pbPage > 0) { pbPage--; loadPlaybookExecutions(); } });
+document.getElementById('pb-next')?.addEventListener('click', () => { pbPage++; loadPlaybookExecutions(); });
+
+
+// ── Geo Policy ────────────────────────────────────────────────────────
+
+let geoCountries = [];
+
+async function loadGeoPolicyView() {
+    try {
+        const status = await fetchJSON('/api/geo-policy/status');
+        document.getElementById('geo-stat-enabled').textContent = status.enabled ? 'Yes' : 'No';
+        document.getElementById('geo-stat-mode').textContent = status.mode || '-';
+        document.getElementById('geo-stat-action').textContent = status.action || '-';
+        document.getElementById('geo-stat-countries').textContent = formatNumber(status.countries?.length || 0);
+        document.getElementById('geo-stat-enforcements').textContent = formatNumber(status.recent_enforcements || 0);
+
+        // Populate config form
+        document.getElementById('geo-cfg-enabled').value = String(!!status.enabled);
+        document.getElementById('geo-cfg-mode').value = status.mode || 'blacklist';
+        document.getElementById('geo-cfg-action').value = status.action || 'block';
+        document.getElementById('geo-cfg-duration').value = status.block_duration || '';
+        document.getElementById('geo-cfg-exempt').value = (status.exempt_ips || []).join('\n');
+
+        geoCountries = [...(status.countries || [])];
+        renderGeoCountryTags();
+    } catch {}
+}
+
+function renderGeoCountryTags() {
+    const container = document.getElementById('geo-cfg-countries-tags');
+    container.innerHTML = geoCountries.map(c =>
+        `<span class="badge badge-info flex items-center gap-1">${escapeHtml(c)}
+            <button class="geo-remove-country" data-code="${escapeHtml(c)}" style="cursor:pointer;background:none;border:none;color:inherit;font-size:14px;line-height:1">&times;</button>
+        </span>`
+    ).join('') || '<span class="text-gray-500 text-sm">No countries configured</span>';
+
+    container.querySelectorAll('.geo-remove-country').forEach(btn => {
+        btn.addEventListener('click', () => {
+            geoCountries = geoCountries.filter(c => c !== btn.dataset.code);
+            renderGeoCountryTags();
+        });
+    });
+}
+
+document.getElementById('geo-add-country-btn')?.addEventListener('click', () => {
+    const input = document.getElementById('geo-cfg-country-input');
+    const code = input.value.trim().toUpperCase();
+    if (code && !geoCountries.includes(code)) {
+        geoCountries.push(code);
+        renderGeoCountryTags();
+    }
+    input.value = '';
+});
+
+document.getElementById('geo-save-btn')?.addEventListener('click', async () => {
+    const body = {
+        enabled: document.getElementById('geo-cfg-enabled').value === 'true',
+        mode: document.getElementById('geo-cfg-mode').value,
+        action: document.getElementById('geo-cfg-action').value,
+        block_duration: parseInt(document.getElementById('geo-cfg-duration').value) || 0,
+        countries: geoCountries,
+        exempt_ips: document.getElementById('geo-cfg-exempt').value.split('\n').map(s => s.trim()).filter(Boolean)
+    };
+    try {
+        await patchJSON('/api/geo-policy/config', body);
+        loadGeoPolicyView();
+    } catch {}
+});
+
+document.getElementById('geo-check-btn')?.addEventListener('click', async () => {
+    const ip = document.getElementById('geo-check-ip').value.trim();
+    if (!ip) return;
+    const resultEl = document.getElementById('geo-check-result');
+    resultEl.textContent = 'Checking...';
+    try {
+        const data = await fetchJSON(`/api/geo-policy/check/${encodeURIComponent(ip)}`);
+        resultEl.innerHTML = `<div class="card p-3 mt-2">
+            <div><strong>IP:</strong> ${escapeHtml(data.ip || ip)}</div>
+            <div><strong>Country:</strong> ${escapeHtml(data.country_code || 'Unknown')} ${countryFlag(data.country_code)}</div>
+            <div><strong>Allowed:</strong> ${data.allowed ? '<span class="text-green-400">Yes</span>' : '<span class="text-red-400">No</span>'}</div>
+            <div><strong>Reason:</strong> ${escapeHtml(data.reason || '-')}</div>
+        </div>`;
+    } catch {
+        resultEl.textContent = 'Failed to check IP.';
+    }
+});
+
+
+// ── UA Class Badge ────────────────────────────────────────────
+function uaClassBadge(cls) {
+    if (!cls) return '';
+    const colors = {
+        browser: 'badge-accepted',
+        bot: 'badge-disconnected',
+        crawler: 'badge-disconnected',
+        attack_tool: 'badge-brute',
+        library: 'badge-invalid',
+        unknown: '',
+    };
+    const badgeCls = colors[cls] || '';
+    return `<span class="badge ${badgeCls}">${cls}</span>`;
+}
+
+// ── System Health ─────────────────────────────────────────────
+let currentSystab = 'health';
+
+document.querySelectorAll('[data-systab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+        currentSystab = btn.dataset.systab;
+        document.querySelectorAll('[data-systab]').forEach(b => b.classList.toggle('active', b.dataset.systab === currentSystab));
+        document.getElementById('systab-health').classList.toggle('hidden', currentSystab !== 'health');
+        document.getElementById('systab-dedup').classList.toggle('hidden', currentSystab !== 'dedup');
+        if (currentSystab === 'health') loadSystemHealth();
+        else if (currentSystab === 'dedup') loadDedupStats();
+    });
+});
+
+async function loadSystemView() {
+    if (currentSystab === 'health') await loadSystemHealth();
+    else await loadDedupStats();
+}
+
+async function loadSystemHealth() {
+    try {
+        const data = await fetchJSON('/api/health-monitor/status');
+        document.getElementById('sys-uptime').textContent = data.uptime || '-';
+        document.getElementById('sys-db-size').textContent = data.db_size || '-';
+        document.getElementById('sys-enrich-queue').textContent = data.enrichment_queue ?? '-';
+        document.getElementById('sys-watchers').textContent = data.watchers_active ?? '-';
+
+        // Deadman alerts
+        const deadmanAlerts = data.deadman_alerts || [];
+        document.getElementById('sys-deadman-count').textContent = deadmanAlerts.length;
+        const tbody = document.getElementById('deadman-table-body');
+        tbody.innerHTML = deadmanAlerts.map(a => `
+            <tr>
+                <td class="font-mono text-xs">${escapeHtml(a.file_path || '-')}</td>
+                <td>${a.last_event_ago || '-'}</td>
+                <td>${a.status === 'alert' ? '<span class="badge badge-brute">ALERT</span>' : '<span class="badge badge-accepted">OK</span>'}</td>
+            </tr>
+        `).join('') || '<tr><td colspan="3" class="text-gray-500 text-center">No deadman alerts</td></tr>';
+    } catch (e) {
+        console.error('Failed to load system health:', e);
+    }
+
+    // Event rates chart
+    try {
+        const rates = await fetchJSON('/api/health-monitor/event-rates?last=60');
+        const container = document.getElementById('system-rate-chart');
+        if (rates.points && rates.points.length) {
+            const chart = echarts.init(container);
+            chart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: rates.points.map(p => p.time), axisLabel: { color: '#9ca3af' } },
+                yAxis: { type: 'value', axisLabel: { color: '#9ca3af' } },
+                series: [{ data: rates.points.map(p => p.count), type: 'line', smooth: true, areaStyle: { opacity: 0.15 }, lineStyle: { color: '#3b82f6' }, itemStyle: { color: '#3b82f6' } }]
+            });
+        } else {
+            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No event rate data</div>';
+        }
+    } catch (e) {
+        document.getElementById('system-rate-chart').innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">Event rate data unavailable</div>';
+    }
+
+    // DB growth chart
+    try {
+        const growth = await fetchJSON('/api/health-monitor/db-growth?last=60');
+        const container = document.getElementById('system-db-chart');
+        if (growth.points && growth.points.length) {
+            const chart = echarts.init(container);
+            chart.setOption({
+                backgroundColor: 'transparent',
+                tooltip: { trigger: 'axis' },
+                xAxis: { type: 'category', data: growth.points.map(p => p.time), axisLabel: { color: '#9ca3af' } },
+                yAxis: { type: 'value', axisLabel: { color: '#9ca3af' } },
+                series: [{ data: growth.points.map(p => p.size), type: 'line', smooth: true, areaStyle: { opacity: 0.15 }, lineStyle: { color: '#10b981' }, itemStyle: { color: '#10b981' } }]
+            });
+        } else {
+            container.innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">No DB growth data</div>';
+        }
+    } catch (e) {
+        document.getElementById('system-db-chart').innerHTML = '<div class="text-gray-500 text-center" style="padding-top:80px">DB growth data unavailable</div>';
+    }
+}
+
+async function loadDedupStats() {
+    try {
+        const data = await fetchJSON('/api/dedup/stats');
+        document.getElementById('dedup-enabled').textContent = data.enabled ? 'Yes' : 'No';
+        document.getElementById('dedup-ssh-buckets').textContent = data.ssh_buckets ?? '-';
+        document.getElementById('dedup-http-buckets').textContent = data.http_buckets ?? '-';
+        document.getElementById('dedup-ssh-pending').textContent = data.ssh_pending ?? '-';
+        document.getElementById('dedup-http-pending').textContent = data.http_pending ?? '-';
+
+        const configEl = document.getElementById('dedup-config-display');
+        if (data.config) {
+            configEl.innerHTML = `
+                <div class="grid grid-cols-2 gap-4">
+                    <div><span class="text-gray-500">SSH Window:</span> ${data.config.ssh_window ?? '-'}s</div>
+                    <div><span class="text-gray-500">HTTP Window:</span> ${data.config.http_window ?? '-'}s</div>
+                </div>
+            `;
+        } else {
+            configEl.textContent = 'No dedup configuration available';
+        }
+    } catch (e) {
+        console.error('Failed to load dedup stats:', e);
+        document.getElementById('dedup-config-display').textContent = 'Failed to load dedup stats';
+    }
+}
+
 // Init
 async function init() {
     initCharts();
@@ -3060,4 +3554,8 @@ async function init() {
     }, 30000);
 }
 
-init();
+// Boot: check auth first, then init
+(async () => {
+    const ok = await checkAuth();
+    if (ok) init();
+})();

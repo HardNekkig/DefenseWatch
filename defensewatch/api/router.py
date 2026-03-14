@@ -3,7 +3,11 @@ import os
 import time
 
 from fastapi import APIRouter, Query
-from defensewatch.api import events, stats, ips, map as map_router, ws, incidents, scanner, firewall, fail2ban, telegram, settings
+from defensewatch.api import events, stats, ips, map as map_router, ws, incidents, scanner, firewall, fail2ban, telegram, settings, audit, validate, auth as auth_router, honeypot as honeypot_router, blocklists as blocklists_router
+from defensewatch.playbooks import router as playbooks_router
+from defensewatch.geo_policy import router as geo_policy_router
+from defensewatch.health_monitor import router as health_monitor_router
+from defensewatch.dedup import router as dedup_router
 from defensewatch.database import get_db
 
 
@@ -98,6 +102,7 @@ async def get_brute_force():
 
 
 def mount_routers(app):
+    app.include_router(auth_router.router)
     app.include_router(events.router)
     app.include_router(stats.router)
     app.include_router(ips.router)
@@ -109,4 +114,12 @@ def mount_routers(app):
     app.include_router(fail2ban.router)
     app.include_router(telegram.router)
     app.include_router(settings.router)
+    app.include_router(audit.router)
+    app.include_router(validate.router)
+    app.include_router(honeypot_router.router)
+    app.include_router(blocklists_router.router)
+    app.include_router(playbooks_router)
+    app.include_router(geo_policy_router)
+    app.include_router(health_monitor_router)
+    app.include_router(dedup_router)
     app.include_router(api_router)

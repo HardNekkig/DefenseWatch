@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import datetime
 from defensewatch.models import HTTPEvent
 from defensewatch.config import DetectionConfig
+from defensewatch.parsers.ua_classifier import classify_user_agent
 
 logger = logging.getLogger(__name__)
 
@@ -167,6 +168,9 @@ def parse_http_line(line: str, vhost: str | None = None) -> HTTPEvent | None:
     attack_types, severity = detect_attacks(
         path, user_agent=ua, method=method, status_code=int(status))
 
+    # Classify user agent
+    ua_class = classify_user_agent(ua)
+
     # If scanner detected but no attack, still mark as low
     if scanner and not attack_types:
         attack_types = ['scanner']
@@ -187,4 +191,5 @@ def parse_http_line(line: str, vhost: str | None = None) -> HTTPEvent | None:
         scanner_name=scanner,
         severity=severity,
         raw_line=line,
+        ua_class=ua_class,
     )

@@ -10,7 +10,9 @@ export class LiveSocket {
 
     connect() {
         const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const url = `${proto}//${location.host}/ws/live`;
+        let url = `${proto}//${location.host}/ws/live`;
+        const token = localStorage.getItem('dw_token');
+        if (token) url += `?token=${encodeURIComponent(token)}`;
 
         this.ws = new WebSocket(url);
 

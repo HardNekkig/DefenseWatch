@@ -13,6 +13,7 @@ class SSHEvent:
     pid: int | None
     raw_line: str
     service_port: int | None = None
+    event_count: int = 1
     ip_id: int | None = None
     id: int | None = None
     created_at: float | None = None
@@ -35,6 +36,8 @@ class HTTPEvent:
     severity: str | None = None
     raw_line: str = ""
     service_port: int | None = None
+    ua_class: str = ""
+    event_count: int = 1
     ip_id: int | None = None
     id: int | None = None
     created_at: float | None = None

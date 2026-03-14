@@ -2,6 +2,7 @@ import json
 import time
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from defensewatch.audit import log_audit
 from defensewatch.database import get_db
 
 router = APIRouter(prefix="/api/incidents", tags=["incidents"])
@@ -135,6 +136,7 @@ async def create_incident(body: IncidentCreate):
                 )
 
     await db.commit()
+    await log_audit("incident_create", str(incident_id), f"Created incident: {body.title}", actor="api")
     return {"id": incident_id, "status": "created"}
 
 
@@ -317,6 +319,7 @@ async def update_incident(incident_id: int, body: IncidentUpdate):
         f"UPDATE incidents SET {', '.join(updates)} WHERE id=?", params
     )
     await db.commit()
+    await log_audit("incident_update", str(incident_id), f"Updated incident", actor="api")
     return {"status": "updated"}
 
 
@@ -353,6 +356,7 @@ async def link_events(incident_id: int, body: IncidentLinkEvents):
         linked += 1
 
     await db.commit()
+    await log_audit("incident_link", str(incident_id), f"Linked events", actor="api")
     return {"status": "linked", "events_linked": linked}
 
 
@@ -384,6 +388,7 @@ async def delete_incident(incident_id: int):
     await db.execute("DELETE FROM incidents WHERE id=?", (incident_id,))
 
     await db.commit()
+    await log_audit("incident_delete", str(incident_id), "Deleted incident", actor="api")
     return {"status": "deleted"}
 
 

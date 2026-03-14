@@ -121,6 +121,24 @@ async def compute_threat_score(ip: str) -> dict:
         except (json.JSONDecodeError, TypeError):
             pass
 
+    # Honeypot hits
+    try:
+        from defensewatch.api.honeypot import honeypot_score_boost
+        hp_points, hp_reasons = await honeypot_score_boost(ip)
+        score += hp_points
+        reasons.extend(hp_reasons)
+    except Exception:
+        pass
+
+    # Blocklist matches
+    try:
+        from defensewatch.enrichment.blocklists import blocklist_score_boost
+        bl_points, bl_reasons = blocklist_score_boost(ip)
+        score += bl_points
+        reasons.extend(bl_reasons)
+    except Exception:
+        pass
+
     score = min(score, 100)
 
     if score >= 70:

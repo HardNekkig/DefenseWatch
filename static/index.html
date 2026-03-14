@@ -17,6 +17,28 @@
 
 <body>
 
+    <!-- ── Login Overlay ───────────────────────────────── -->
+    <div id="login-overlay" class="hidden" style="position:fixed;inset:0;background:var(--bg);z-index:9999;display:flex;align-items:center;justify-content:center">
+        <div class="card" style="width:380px;max-width:90vw">
+            <div style="text-align:center;margin-bottom:1.5rem">
+                <div class="brand-logo" style="margin:0 auto 0.75rem;width:48px;height:48px;font-size:1.25rem;line-height:48px">DW</div>
+                <h1 class="text-lg font-semibold">DefenseWatch Login</h1>
+            </div>
+            <div id="login-error" class="text-sm hidden" style="color:#f87171;margin-bottom:0.75rem;text-align:center"></div>
+            <form id="login-form" autocomplete="on">
+                <div style="margin-bottom:0.75rem">
+                    <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Username</label>
+                    <input type="text" id="login-username" class="input-dark w-full" autocomplete="username" required>
+                </div>
+                <div style="margin-bottom:1rem">
+                    <label class="text-xs text-gray-500" style="display:block;margin-bottom:4px">Password</label>
+                    <input type="password" id="login-password" class="input-dark w-full" autocomplete="current-password" required>
+                </div>
+                <button type="submit" class="btn-primary w-full">Sign In</button>
+            </form>
+        </div>
+    </div>
+
     <!-- ── Navigation ──────────────────────────────────── -->
     <nav>
         <div class="brand">
@@ -25,20 +47,58 @@
         </div>
 
         <div id="nav-buttons">
-            <button class="nav-btn active" data-section="dashboard">Dashboard</button>
-            <button class="nav-btn" data-section="map">Attack Map</button>
-            <button class="nav-btn" data-section="events">Events</button>
-            <button class="nav-btn" data-section="intel">IP Intel</button>
-            <button class="nav-btn" data-section="incidents">Incidents</button>
-            <button class="nav-btn" data-section="scanner">Scanner</button>
-            <button class="nav-btn" data-section="firewall">Firewall</button>
-            <button class="nav-btn" data-section="settings">Settings</button>
+            <button class="nav-btn active" data-section="dashboard" title="Real-time overview dashboard with attack statistics, charts, and live event feed">Dashboard</button>
+            <button class="nav-btn" data-section="map" title="Visual geographic map showing attack origins and real-time attack flows">Attack Map</button>
+            <button class="nav-btn" data-section="events" title="Detailed log of all SSH and HTTP attack events with filtering options">Events</button>
+
+            <!-- Security Operations Dropdown -->
+            <div class="nav-dropdown">
+                <button class="nav-btn nav-dropdown-btn" title="Security operations and intelligence features">
+                    Security Ops ▾
+                </button>
+                <div class="nav-dropdown-menu">
+                    <button class="nav-dropdown-item" data-section="intel" title="Investigate IP addresses with threat intelligence, WHOIS, and geolocation data">IP Intelligence</button>
+                    <button class="nav-dropdown-item" data-section="incidents" title="Review and manage detected security incidents with threat correlation">Incidents</button>
+                    <button class="nav-dropdown-item" data-section="audit" title="System audit trail showing all user actions and configuration changes">Audit Log</button>
+                </div>
+            </div>
+
+            <!-- Defense Tools Dropdown -->
+            <div class="nav-dropdown">
+                <button class="nav-btn nav-dropdown-btn" title="Active defense and response tools">
+                    Defense Tools ▾
+                </button>
+                <div class="nav-dropdown-menu">
+                    <button class="nav-dropdown-item" data-section="firewall" title="Manage firewall rules, block/allow IPs, and configure automated blocking">Firewall</button>
+                    <button class="nav-dropdown-item" data-section="honeypot" title="Configure honeypot services to detect and track attacker behavior">Honeypot</button>
+                    <button class="nav-dropdown-item" data-section="playbooks" title="Automated response playbooks for common attack patterns">Playbooks</button>
+                    <button class="nav-dropdown-item" data-section="geo-policy" title="Geographic access policies to block or allow traffic by country">Geo Policy</button>
+                </div>
+            </div>
+
+            <!-- System Dropdown -->
+            <div class="nav-dropdown">
+                <button class="nav-btn nav-dropdown-btn" title="System configuration and monitoring">
+                    System ▾
+                </button>
+                <div class="nav-dropdown-menu">
+                    <button class="nav-dropdown-item" data-section="scanner" title="Port scanning and service detection to identify exposed services">Scanner</button>
+                    <button class="nav-dropdown-item" data-section="system" title="System health, resource usage, and service status monitoring">Health & Status</button>
+                    <button class="nav-dropdown-item" data-section="settings" title="Application settings: log paths, webhooks, API keys, and thresholds">Settings</button>
+                </div>
+            </div>
         </div>
 
-        <span id="ws-status">
-            <span id="ws-dot"></span>
-            <span id="ws-label">Disconnected</span>
-        </span>
+        <div class="flex items-center gap-3">
+            <span id="ws-status">
+                <span id="ws-dot"></span>
+                <span id="ws-label">Disconnected</span>
+            </span>
+            <span id="user-menu" class="hidden" style="display:none">
+                <span id="user-display" class="text-sm text-gray-400"></span>
+                <button id="logout-btn" class="btn-secondary" style="padding:2px 8px;font-size:0.7rem;margin-left:6px">Logout</button>
+            </span>
+        </div>
     </nav>
 
     <!-- ── Main Content ────────────────────────────────── -->
@@ -302,6 +362,7 @@
                                     <th>Attack Types</th>
                                     <th class="sortable-th" data-sort="severity" data-table="http">Severity</th>
                                     <th class="sortable-th" data-sort="scanner_name" data-table="http">Scanner</th>
+                                    <th>UA Class</th>
                                 </tr>
                             </thead>
                             <tbody id="http-table-body"></tbody>
@@ -1465,6 +1526,354 @@
                         </div>
                     </div>
                     <button id="set-gen-save" class="btn-primary">Save General Settings</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Honeypot -->
+        <section id="section-honeypot" class="section hidden">
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                <div class="stat-card">
+                    <div class="stat-label">Total Hits</div>
+                    <div class="stat-value" id="hp-stat-total">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Unique IPs</div>
+                    <div class="stat-value" id="hp-stat-ips">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Last 24h</div>
+                    <div class="stat-value" id="hp-stat-24h">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Auto-Blocked</div>
+                    <div class="stat-value" id="hp-stat-blocked">-</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
+                <div class="card">
+                    <h3 class="chart-title">Top Trap Paths</h3>
+                    <div id="hp-top-paths" class="space-y-2 text-sm"></div>
+                </div>
+                <div class="card">
+                    <h3 class="chart-title">Top Offending IPs</h3>
+                    <div id="hp-top-ips" class="space-y-2 text-sm"></div>
+                </div>
+            </div>
+
+            <div class="card">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="chart-title" style="margin-bottom:0">Recent Honeypot Events</h3>
+                    <div class="flex items-center gap-2">
+                        <input type="text" id="hp-filter-ip" class="input-dark" placeholder="Filter IP..." style="width:140px">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Source IP</th>
+                                <th>Method</th>
+                                <th>Path</th>
+                                <th>Status</th>
+                                <th>User Agent</th>
+                                <th>Country</th>
+                                <th>Blocked</th>
+                            </tr>
+                        </thead>
+                        <tbody id="hp-events-body"></tbody>
+                    </table>
+                </div>
+                <div class="flex justify-between mt-3">
+                    <button id="hp-prev" class="btn-secondary" disabled>&laquo; Prev</button>
+                    <span id="hp-page-info" class="text-sm text-gray-400"></span>
+                    <button id="hp-next" class="btn-secondary">Next &raquo;</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Audit Log -->
+        <section id="section-audit" class="section hidden">
+            <div class="card mb-4">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="chart-title" style="margin-bottom:0">Audit Log</h3>
+                    <div class="flex items-center gap-2">
+                        <select id="audit-filter-action" class="input-dark" style="width:140px">
+                            <option value="">All Actions</option>
+                            <option value="firewall_block">Firewall Block</option>
+                            <option value="firewall_unblock">Firewall Unblock</option>
+                            <option value="incident_create">Incident Create</option>
+                            <option value="incident_update">Incident Update</option>
+                            <option value="incident_delete">Incident Delete</option>
+                            <option value="settings_update">Settings Update</option>
+                            <option value="scan_start">Scan Start</option>
+                            <option value="service_add">Service Add</option>
+                            <option value="service_remove">Service Remove</option>
+                        </select>
+                        <input type="text" id="audit-filter-actor" class="input-dark" placeholder="Actor..." style="width:120px">
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Actor</th>
+                                <th>Action</th>
+                                <th>Target</th>
+                                <th>Detail</th>
+                                <th>IP Address</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-events-body"></tbody>
+                    </table>
+                </div>
+                <div class="flex justify-between mt-3">
+                    <button id="audit-prev" class="btn-secondary" disabled>&laquo; Prev</button>
+                    <span id="audit-page-info" class="text-sm text-gray-400"></span>
+                    <button id="audit-next" class="btn-secondary">Next &raquo;</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Playbooks -->
+        <section id="section-playbooks" class="section hidden">
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">Automated Response Playbooks</h3>
+                <div class="grid grid-cols-4 gap-4 mb-4">
+                    <div class="stat-card">
+                        <div class="stat-label">Enabled</div>
+                        <div class="stat-value" id="pb-stat-enabled">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Check Interval</div>
+                        <div class="stat-value" id="pb-stat-interval">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Rule Count</div>
+                        <div class="stat-value" id="pb-stat-rules">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Cooldown Entries</div>
+                        <div class="stat-value" id="pb-stat-cooldowns">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">Playbook Rules</h3>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Description</th>
+                                <th>Condition</th>
+                                <th>Actions</th>
+                                <th>Cooldown</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pb-rules-body"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">Recent Executions</h3>
+                <div class="overflow-x-auto">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Rule</th>
+                                <th>IP</th>
+                                <th>Actions Taken</th>
+                                <th>Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody id="pb-exec-body"></tbody>
+                    </table>
+                </div>
+                <div class="flex justify-between mt-3">
+                    <button id="pb-prev" class="btn-secondary" disabled>&laquo; Prev</button>
+                    <span id="pb-page-info" class="text-sm text-gray-400"></span>
+                    <button id="pb-next" class="btn-secondary">Next &raquo;</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Geo Policy -->
+        <section id="section-geo-policy" class="section hidden">
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">GeoIP Access Policies</h3>
+                <div class="grid grid-cols-5 gap-4 mb-4">
+                    <div class="stat-card">
+                        <div class="stat-label">Enabled</div>
+                        <div class="stat-value" id="geo-stat-enabled">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Mode</div>
+                        <div class="stat-value" id="geo-stat-mode">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Action</div>
+                        <div class="stat-value" id="geo-stat-action">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Countries</div>
+                        <div class="stat-value" id="geo-stat-countries">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Recent Enforcements</div>
+                        <div class="stat-value" id="geo-stat-enforcements">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">Configuration</h3>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div>
+                        <label class="text-sm text-gray-400 block mb-1">Enabled</label>
+                        <select id="geo-cfg-enabled" class="input-dark w-full">
+                            <option value="true">Enabled</option>
+                            <option value="false">Disabled</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-400 block mb-1">Mode</label>
+                        <select id="geo-cfg-mode" class="input-dark w-full">
+                            <option value="blacklist">Blacklist</option>
+                            <option value="whitelist">Whitelist</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-400 block mb-1">Action</label>
+                        <select id="geo-cfg-action" class="input-dark w-full">
+                            <option value="block">Block</option>
+                            <option value="alert">Alert</option>
+                            <option value="flag">Flag</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-sm text-gray-400 block mb-1">Block Duration (seconds)</label>
+                        <input type="number" id="geo-cfg-duration" class="input-dark w-full" placeholder="3600">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="text-sm text-gray-400 block mb-1">Countries</label>
+                    <div id="geo-cfg-countries-tags" class="flex flex-wrap gap-2 mb-2"></div>
+                    <div class="flex gap-2">
+                        <input type="text" id="geo-cfg-country-input" class="input-dark" placeholder="Add country code (e.g. CN)..." style="width:200px">
+                        <button id="geo-add-country-btn" class="btn-secondary">Add</button>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="text-sm text-gray-400 block mb-1">Exempt IPs (one per line)</label>
+                    <textarea id="geo-cfg-exempt" class="input-dark w-full" rows="4" placeholder="192.168.1.1&#10;10.0.0.0/8"></textarea>
+                </div>
+                <button id="geo-save-btn" class="btn-primary">Save</button>
+            </div>
+
+            <div class="card mb-4">
+                <h3 class="chart-title mb-3">IP Check</h3>
+                <div class="flex gap-2 mb-3">
+                    <input type="text" id="geo-check-ip" class="input-dark" placeholder="Enter IP address..." style="width:250px">
+                    <button id="geo-check-btn" class="btn-secondary">Check</button>
+                </div>
+                <div id="geo-check-result" class="text-sm text-gray-400"></div>
+            </div>
+        </section>
+
+        <!-- System Health -->
+        <section id="section-system" class="section hidden">
+            <!-- Sub-tabs -->
+            <div class="events-subtab-bar mb-4">
+                <button class="evtab-btn active" data-systab="health">Health</button>
+                <button class="evtab-btn" data-systab="dedup">Dedup</button>
+            </div>
+
+            <!-- Health sub-tab -->
+            <div id="systab-health">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+                    <div class="stat-card">
+                        <div class="stat-label">Uptime</div>
+                        <div class="stat-value" id="sys-uptime">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">DB Size</div>
+                        <div class="stat-value" id="sys-db-size">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Enrichment Queue</div>
+                        <div class="stat-value" id="sys-enrich-queue">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Watchers Active</div>
+                        <div class="stat-value" id="sys-watchers">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Deadman Alerts</div>
+                        <div class="stat-value" id="sys-deadman-count">-</div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <h3 class="chart-title mb-3">Event Rate</h3>
+                    <div id="system-rate-chart" style="height:200px"></div>
+                </div>
+                <div class="card mb-4">
+                    <h3 class="chart-title mb-3">DB Growth</h3>
+                    <div id="system-db-chart" style="height:200px"></div>
+                </div>
+
+                <div class="card">
+                    <h3 class="chart-title mb-3">Deadman Alerts</h3>
+                    <div class="overflow-x-auto">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>File Path</th>
+                                    <th>Last Event Ago</th>
+                                    <th>Status</th>
+                                </tr>
+                            </thead>
+                            <tbody id="deadman-table-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Dedup sub-tab -->
+            <div id="systab-dedup" class="hidden">
+                <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
+                    <div class="stat-card">
+                        <div class="stat-label">Enabled</div>
+                        <div class="stat-value" id="dedup-enabled">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">SSH Buckets</div>
+                        <div class="stat-value" id="dedup-ssh-buckets">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">HTTP Buckets</div>
+                        <div class="stat-value" id="dedup-http-buckets">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">SSH Pending</div>
+                        <div class="stat-value" id="dedup-ssh-pending">-</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">HTTP Pending</div>
+                        <div class="stat-value" id="dedup-http-pending">-</div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <h3 class="chart-title mb-3">Dedup Configuration</h3>
+                    <div id="dedup-config-display" class="text-sm text-gray-400">Loading...</div>
                 </div>
             </div>
         </section>

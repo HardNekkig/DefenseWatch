@@ -288,6 +288,82 @@ async def _create_tables(db: aiosqlite.Connection):
             WHERE id = NEW.id;
         END;
 
+        CREATE TABLE IF NOT EXISTS audit_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            actor TEXT NOT NULL DEFAULT 'system',
+            action TEXT NOT NULL,
+            target TEXT NOT NULL DEFAULT '',
+            detail TEXT NOT NULL DEFAULT '',
+            ip_address TEXT NOT NULL DEFAULT '',
+            created_at REAL NOT NULL DEFAULT (unixepoch('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_log(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_audit_action ON audit_log(action);
+        CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor);
+
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL DEFAULT 'viewer',
+            is_active INTEGER NOT NULL DEFAULT 1,
+            last_login REAL,
+            created_at REAL NOT NULL DEFAULT (unixepoch('now')),
+            updated_at REAL NOT NULL DEFAULT (unixepoch('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username);
+
+        CREATE TABLE IF NOT EXISTS sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            token_jti TEXT UNIQUE NOT NULL,
+            token_type TEXT NOT NULL DEFAULT 'access',
+            issued_at REAL NOT NULL,
+            expires_at REAL NOT NULL,
+            revoked INTEGER NOT NULL DEFAULT 0,
+            ip_address TEXT,
+            user_agent TEXT,
+            created_at REAL NOT NULL DEFAULT (unixepoch('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_jti ON sessions(token_jti);
+
+        CREATE TABLE IF NOT EXISTS honeypot_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp REAL NOT NULL,
+            source_ip TEXT NOT NULL,
+            method TEXT,
+            path TEXT NOT NULL,
+            user_agent TEXT,
+            headers TEXT,
+            status_code INTEGER NOT NULL DEFAULT 403,
+            auto_blocked INTEGER NOT NULL DEFAULT 0,
+            ip_id INTEGER REFERENCES ip_intel(id),
+            created_at REAL NOT NULL DEFAULT (unixepoch('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_honeypot_timestamp ON honeypot_events(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_honeypot_source_ip ON honeypot_events(source_ip);
+        CREATE INDEX IF NOT EXISTS idx_honeypot_path ON honeypot_events(path);
+
+        CREATE TRIGGER IF NOT EXISTS fill_honeypot_ip_id
+        AFTER INSERT ON honeypot_events
+        WHEN NEW.ip_id IS NULL AND NEW.source_ip IS NOT NULL
+        BEGIN
+            UPDATE honeypot_events
+            SET ip_id = (SELECT id FROM ip_intel WHERE ip = NEW.source_ip)
+            WHERE id = NEW.id;
+        END;
+
+        CREATE TABLE IF NOT EXISTS blocklist_entries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            list_name TEXT NOT NULL,
+            network TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            updated_at REAL NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_blocklist_list ON blocklist_entries(list_name);
+
         CREATE TRIGGER IF NOT EXISTS fill_ssh_ip_id
         AFTER INSERT ON ssh_events
         WHEN NEW.ip_id IS NULL
@@ -310,10 +386,23 @@ async def _create_tables(db: aiosqlite.Connection):
         AFTER INSERT ON brute_force_sessions
         WHEN NEW.ip_id IS NULL
         BEGIN
-            UPDATE brute_force_sessions 
+            UPDATE brute_force_sessions
             SET ip_id = (SELECT id FROM ip_intel WHERE ip = NEW.source_ip)
             WHERE id = NEW.id;
         END;
+
+        CREATE TABLE IF NOT EXISTS playbook_executions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            rule_name TEXT NOT NULL,
+            source_ip TEXT NOT NULL,
+            actions_taken TEXT NOT NULL DEFAULT '[]',
+            detail TEXT DEFAULT '',
+            executed_at REAL NOT NULL,
+            created_at REAL NOT NULL DEFAULT (unixepoch('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_pb_exec_rule ON playbook_executions(rule_name);
+        CREATE INDEX IF NOT EXISTS idx_pb_exec_ip ON playbook_executions(source_ip);
+        CREATE INDEX IF NOT EXISTS idx_pb_exec_time ON playbook_executions(executed_at);
     """)
 
 
@@ -330,8 +419,11 @@ async def cleanup_old_data(retention_days: int):
         UNION SELECT DISTINCT ip_id FROM brute_force_sessions WHERE ip_id IS NOT NULL
         UNION SELECT DISTINCT ip_id FROM service_events WHERE ip_id IS NOT NULL
     )""")
+    await db.execute("DELETE FROM honeypot_events WHERE timestamp < ?", (cutoff,))
+    await db.execute("DELETE FROM audit_log WHERE timestamp < ?", (cutoff,))
     await db.execute("DELETE FROM threat_intel_hits WHERE checked_at < ?", (cutoff,))
     await db.execute("DELETE FROM anomaly_alerts WHERE detected_at < ?", (cutoff,))
+    await db.execute("DELETE FROM playbook_executions WHERE executed_at < ?", (cutoff,))
     await db.commit()
 
 
@@ -365,3 +457,16 @@ async def _migrate(db: aiosqlite.Connection):
         ):
             if col not in nf_cols:
                 await db.execute(f"ALTER TABLE nuclei_findings ADD COLUMN {col} {coltype}")
+
+    # Add ua_class column to http_events
+    cursor = await db.execute("PRAGMA table_info(http_events)")
+    http_cols = {row[1] for row in await cursor.fetchall()}
+    if "ua_class" not in http_cols:
+        await db.execute("ALTER TABLE http_events ADD COLUMN ua_class TEXT DEFAULT ''")
+
+    # Add event_count columns for deduplication
+    for table in ("ssh_events", "http_events"):
+        cursor = await db.execute(f"PRAGMA table_info({table})")
+        cols = {row[1] for row in await cursor.fetchall()}
+        if "event_count" not in cols:
+            await db.execute(f"ALTER TABLE {table} ADD COLUMN event_count INTEGER NOT NULL DEFAULT 1")

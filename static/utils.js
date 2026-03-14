@@ -60,8 +60,77 @@ export function escapeHtml(str) {
     return div.innerHTML;
 }
 
+export function getAuthToken() {
+    return localStorage.getItem('dw_token');
+}
+
+export function setAuthToken(token) {
+    localStorage.setItem('dw_token', token);
+}
+
+export function clearAuthToken() {
+    localStorage.removeItem('dw_token');
+    localStorage.removeItem('dw_user');
+}
+
+export function getAuthHeaders() {
+    const token = getAuthToken();
+    return token ? { 'Authorization': `Bearer ${token}` } : {};
+}
+
 export async function fetchJSON(url) {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { headers: getAuthHeaders() });
+    if (resp.status === 401) {
+        clearAuthToken();
+        window.dispatchEvent(new Event('dw-auth-required'));
+        throw new Error('Authentication required');
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+}
+
+export async function postJSON(url, body) {
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+    });
+    if (resp.status === 401) {
+        clearAuthToken();
+        window.dispatchEvent(new Event('dw-auth-required'));
+        throw new Error('Authentication required');
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+}
+
+export async function patchJSON(url, body) {
+    const resp = await fetch(url, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+    });
+    if (resp.status === 401) {
+        clearAuthToken();
+        window.dispatchEvent(new Event('dw-auth-required'));
+        throw new Error('Authentication required');
+    }
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+}
+
+export async function deleteJSON(url, body) {
+    const opts = { method: 'DELETE', headers: { ...getAuthHeaders() } };
+    if (body) {
+        opts.headers['Content-Type'] = 'application/json';
+        opts.body = JSON.stringify(body);
+    }
+    const resp = await fetch(url, opts);
+    if (resp.status === 401) {
+        clearAuthToken();
+        window.dispatchEvent(new Event('dw-auth-required'));
+        throw new Error('Authentication required');
+    }
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
 }

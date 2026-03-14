@@ -3,7 +3,7 @@ import asyncio
 import logging
 from pathlib import Path
 from watchdog.observers.polling import PollingObserver
-from defensewatch.watchers.handlers import SSHLogHandler, HTTPLogHandler, NginxErrorLogHandler, ServiceLogHandler
+from defensewatch.watchers.handlers import SSHLogHandler, HTTPLogHandler, NginxErrorLogHandler, ServiceLogHandler, NetfilterLogHandler
 from defensewatch.parsers.portscan import PortScanTracker
 from defensewatch.broadcast import ConnectionManager
 from defensewatch.config import AppConfig
@@ -118,6 +118,23 @@ class WatcherManager:
                 watch_dir = str(Path(entry.path).parent)
                 self.observer.schedule(handler, watch_dir, recursive=False)
                 logger.info(f"Watching {svc_category} log: {entry.path} (port={entry.port})")
+
+        # Set up netfilter watchers (iptables LOG for SYN scan detection)
+        for entry in self.config.logs.netfilter_entries():
+            if not os.path.exists(entry.path):
+                logger.warning(f"Netfilter log not found: {entry.path}")
+                continue
+            handler = NetfilterLogHandler(
+                entry.path, self.loop, self.manager,
+                enrichment_queue=self.enrichment_queue,
+                notifier=self.notifier,
+                whitelist=self.config.firewall.whitelist,
+                portscan_tracker=self.portscan_tracker,
+            )
+            self.handlers.append(handler)
+            watch_dir = str(Path(entry.path).parent)
+            self.observer.schedule(handler, watch_dir, recursive=False)
+            logger.info(f"Watching netfilter log: {entry.path}")
 
         # Backfill existing logs
         for handler in self.handlers:

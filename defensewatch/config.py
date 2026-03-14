@@ -30,6 +30,7 @@ class LogsConfig:
     postgresql: list[str] = field(default_factory=list)
     mail: list[str] = field(default_factory=list)
     ftp: list[str] = field(default_factory=list)
+    netfilter: list[str] = field(default_factory=list)
 
     def ssh_entries(self) -> list[LogEntry]:
         return _normalize_log_entries(self.ssh, default_port=22)
@@ -51,6 +52,9 @@ class LogsConfig:
 
     def ftp_entries(self) -> list[LogEntry]:
         return _normalize_log_entries(self.ftp, default_port=21)
+
+    def netfilter_entries(self) -> list[LogEntry]:
+        return _normalize_log_entries(self.netfilter, default_port=None)
 
 
 def _normalize_log_entries(items: list, default_port: int) -> list[LogEntry]:
@@ -93,7 +97,7 @@ class DetectionConfig:
     ssh_brute_window_seconds: int = 300
     http_scan_threshold: int = 20
     http_scan_window_seconds: int = 60
-    portscan_threshold: int = 3        # distinct ports to trigger detection
+    portscan_threshold: int = 2        # distinct ports to trigger detection (2 = more sensitive to internet scanners)
     portscan_window_seconds: int = 300  # time window for port scan detection
 
 
@@ -197,6 +201,109 @@ class ExternalAPIsConfig:
 
 
 @dataclass
+class AuthConfig:
+    enabled: bool = False
+    jwt_secret: str = ""
+    token_expiry_hours: int = 24
+    refresh_expiry_hours: int = 168  # 7 days
+
+
+DEFAULT_HONEYPOT_PATHS: list[str] = [
+    "/.env", "/wp-login.php", "/wp-admin", "/phpmyadmin",
+    "/admin", "/administrator", "/.git/config", "/config.php",
+    "/xmlrpc.php", "/wp-config.php", "/backup.sql", "/.aws/credentials",
+    "/actuator", "/solr/admin", "/manager/html", "/cgi-bin/",
+]
+
+
+@dataclass
+class HoneypotConfig:
+    enabled: bool = True
+    paths: list[str] = field(default_factory=lambda: list(DEFAULT_HONEYPOT_PATHS))
+    auto_block: bool = False
+    score_boost: int = 25
+
+
+@dataclass
+class BlocklistConfig:
+    enabled: bool = False
+    refresh_interval_hours: int = 6
+    lists: list[str] = field(
+        default_factory=lambda: ["spamhaus_drop", "spamhaus_edrop", "dshield", "firehol_level1"],
+    )
+    auto_block: bool = False
+
+
+@dataclass
+class CorrelationConfig:
+    enabled: bool = False
+    check_interval_seconds: int = 300
+    lookback_seconds: int = 3600
+    min_score_for_incident: int = 60
+    rules: list[str] = field(default_factory=lambda: [
+        "coordinated_attack",
+        "brute_then_exploit",
+        "recon_to_attack",
+        "multi_service",
+    ])
+
+
+@dataclass
+class PlaybookConfig:
+    enabled: bool = False
+    check_interval_seconds: int = 60
+    rules: list[dict] = field(default_factory=lambda: [
+        {
+            "name": "high_score_block",
+            "description": "Block IPs with threat score >= 80",
+            "condition": {"min_score": 80},
+            "actions": ["block_24h", "create_incident", "notify"],
+            "cooldown_seconds": 3600,
+        },
+        {
+            "name": "honeypot_repeat_offender",
+            "description": "Block IPs with 3+ honeypot hits",
+            "condition": {"min_honeypot_hits": 3},
+            "actions": ["block_permanent", "create_incident"],
+            "cooldown_seconds": 3600,
+        },
+        {
+            "name": "brute_force_escalation",
+            "description": "Block IPs with 2+ brute force sessions",
+            "condition": {"min_brute_sessions": 2},
+            "actions": ["block_24h", "notify"],
+            "cooldown_seconds": 1800,
+        },
+    ])
+
+
+@dataclass
+class GeoPolicyConfig:
+    enabled: bool = False
+    mode: str = "blacklist"
+    countries: list[str] = field(default_factory=list)
+    action: str = "block"
+    block_duration_hours: int = 0
+    exempt_ips: list[str] = field(default_factory=list)
+
+
+@dataclass
+class HealthMonitorConfig:
+    enabled: bool = True
+    sample_interval_seconds: int = 60
+    ring_buffer_size: int = 1440
+    deadman_threshold_seconds: int = 600
+
+
+@dataclass
+class DedupConfig:
+    enabled: bool = False
+    ssh_window_seconds: int = 60
+    http_window_seconds: int = 60
+    max_batch_size: int = 100
+
+
+@dataclass
 class AppConfig:
     server: ServerConfig = field(default_factory=ServerConfig)
     logs: LogsConfig = field(default_factory=LogsConfig)
@@ -212,6 +319,14 @@ class AppConfig:
     nuclei: NucleiConfig = field(default_factory=NucleiConfig)
     firewall: FirewallConfig = field(default_factory=FirewallConfig)
     external_apis: ExternalAPIsConfig = field(default_factory=ExternalAPIsConfig)
+    auth: AuthConfig = field(default_factory=AuthConfig)
+    honeypot: HoneypotConfig = field(default_factory=HoneypotConfig)
+    blocklists: BlocklistConfig = field(default_factory=BlocklistConfig)
+    correlation: CorrelationConfig = field(default_factory=CorrelationConfig)
+    playbooks: PlaybookConfig = field(default_factory=PlaybookConfig)
+    geo_policy: GeoPolicyConfig = field(default_factory=GeoPolicyConfig)
+    health_monitor: HealthMonitorConfig = field(default_factory=HealthMonitorConfig)
+    dedup: DedupConfig = field(default_factory=DedupConfig)
 
 
 def _dict_to_dataclass(cls, data: dict):
@@ -245,6 +360,14 @@ def load_config(path: str = "config.yaml") -> AppConfig:
         nuclei=_dict_to_dataclass(NucleiConfig, raw.get("nuclei")),
         firewall=_dict_to_dataclass(FirewallConfig, raw.get("firewall")),
         external_apis=_dict_to_dataclass(ExternalAPIsConfig, raw.get("external_apis")),
+        auth=_dict_to_dataclass(AuthConfig, raw.get("auth")),
+        honeypot=_dict_to_dataclass(HoneypotConfig, raw.get("honeypot")),
+        blocklists=_dict_to_dataclass(BlocklistConfig, raw.get("blocklists")),
+        correlation=_dict_to_dataclass(CorrelationConfig, raw.get("correlation")),
+        playbooks=_dict_to_dataclass(PlaybookConfig, raw.get("playbooks")),
+        geo_policy=_dict_to_dataclass(GeoPolicyConfig, raw.get("geo_policy")),
+        health_monitor=_dict_to_dataclass(HealthMonitorConfig, raw.get("health_monitor")),
+        dedup=_dict_to_dataclass(DedupConfig, raw.get("dedup")),
     )
 
     # Environment variables override config file for sensitive API keys
@@ -287,5 +410,10 @@ def load_config(path: str = "config.yaml") -> AppConfig:
         config.telegram.chat_ids = [c.strip() for c in tg_chats.split(",") if c.strip()]
     if tg_token and tg_chats:
         config.telegram.enabled = True
+
+    # Auth JWT secret from env
+    jwt_secret = os.environ.get("DEFENSEWATCH_JWT_SECRET")
+    if jwt_secret:
+        config.auth.jwt_secret = jwt_secret
 
     return config

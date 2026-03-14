@@ -1,6 +1,7 @@
 import logging
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
+from defensewatch.audit import log_audit
 from defensewatch.firewall import (
     block_ip, unblock_ip, list_blocked, block_history, detect_backend,
     list_system_rules,
@@ -85,6 +86,7 @@ async def api_block_ip(body: BlockRequest):
         body.ip, reason=body.reason, source="manual",
         duration_hours=body.duration_hours,
     )
+    await log_audit("firewall_block", body.ip, f"Blocked IP: {body.reason}", actor="api")
     return result
 
 
@@ -92,6 +94,7 @@ async def api_block_ip(body: BlockRequest):
 async def api_unblock_ip(body: BlockRequest):
     """Unblock an IP address."""
     result = await unblock_ip(body.ip)
+    await log_audit("firewall_unblock", body.ip, "Unblocked IP", actor="api")
     return result
 
 
@@ -154,6 +157,7 @@ async def update_autoblock_settings(body: AutoBlockSettings):
     from defensewatch.api.settings import _persist_config
     _persist_config()
     logger.info(f"Auto-block settings updated: enabled={fw.auto_block_enabled}")
+    await log_audit("firewall_settings", "auto_block", "Auto-block settings updated", actor="api")
     return {"ok": True, "auto_block": {
         "enabled": fw.auto_block_enabled,
         "ssh_block_threshold": fw.ssh_block_threshold,

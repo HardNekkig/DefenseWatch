@@ -84,8 +84,24 @@ async def lifespan(app: FastAPI):
     if telegram_notifier.is_configured:
         logger.info("Telegram notifications enabled")
 
+    # Auth config
+    from defensewatch.api.auth import set_api_auth_config
+    set_api_auth_config(config.auth)
+
+    # Honeypot
+    from defensewatch.api.honeypot import set_honeypot_deps, create_honeypot_routes
+    set_honeypot_deps(manager, config)
+
+    # Blocklists
+    from defensewatch.enrichment.blocklists import BlocklistManager, set_blocklist_manager
+    from defensewatch.api.blocklists import set_blocklists_config
+    blocklist_mgr = BlocklistManager(config.blocklists)
+    await blocklist_mgr.start()
+    set_blocklist_manager(blocklist_mgr)
+    set_blocklists_config(config)
+
     # Configure API dependencies
-    from defensewatch.api import ws, map as map_router, ips as ips_router, scanner as scanner_router, firewall as firewall_router, fail2ban as fail2ban_router, telegram as telegram_router, settings as settings_router
+    from defensewatch.api import ws, map as map_router, ips as ips_router, scanner as scanner_router, firewall as firewall_router, fail2ban as fail2ban_router, telegram as telegram_router, settings as settings_router, validate as validate_router
     ws.set_manager(manager)
     map_router.set_config(config)
     ips_router.set_config(config)
@@ -94,6 +110,7 @@ async def lifespan(app: FastAPI):
     fail2ban_router.set_fail2ban_config(config)
     telegram_router.set_telegram_deps(config, telegram_notifier)
     settings_router.set_settings_config(config)
+    validate_router.set_validate_config(config)
 
     # Start watchers
     loop = asyncio.get_event_loop()
@@ -139,6 +156,35 @@ async def lifespan(app: FastAPI):
     else:
         logger.warning("No firewall backend (ufw/iptables) detected — blocking disabled")
 
+    # Correlation engine
+    from defensewatch.correlation import correlation_loop, set_correlation_deps
+    set_correlation_deps(config.correlation, manager)
+    _correlation_task = asyncio.create_task(correlation_loop(config.correlation, manager))
+    logger.info(f"Correlation engine: enabled={config.correlation.enabled}")
+
+    # Playbook engine
+    from defensewatch.playbooks import playbook_loop, set_playbook_config
+    set_playbook_config(config.playbooks)
+    _playbook_task = asyncio.create_task(playbook_loop(config.playbooks, manager))
+    logger.info(f"Playbook engine: enabled={config.playbooks.enabled}")
+
+    # GeoIP access policies
+    from defensewatch.geo_policy import geo_policy_loop, set_geo_policy_deps
+    set_geo_policy_deps(config.geo_policy, manager)
+    _geo_policy_task = asyncio.create_task(geo_policy_loop(config.geo_policy, manager))
+    logger.info(f"Geo policy: enabled={config.geo_policy.enabled}")
+
+    # Health monitor
+    from defensewatch.health_monitor import health_monitor_loop, set_health_config
+    set_health_config(config.health_monitor)
+    asyncio.create_task(health_monitor_loop(config.health_monitor))
+    logger.info(f"Health monitor: enabled={config.health_monitor.enabled}")
+
+    # Event deduplication
+    from defensewatch.dedup import set_dedup_config
+    set_dedup_config(config.dedup)
+    logger.info(f"Event dedup: enabled={config.dedup.enabled}")
+
     yield
 
     # Shutdown
@@ -146,6 +192,7 @@ async def lifespan(app: FastAPI):
         _watcher_manager.stop()
     if _enrichment_pipeline:
         await _enrichment_pipeline.stop()
+    await blocklist_mgr.stop()
     close_geoip()
     await close_db()
     logger.info("DefenseWatch shutdown complete")
@@ -339,6 +386,10 @@ async def security_headers(request, call_next):
 
 # Mount API routers FIRST (before static files)
 mount_routers(app)
+
+# Honeypot routes: after API routers, before static files
+from defensewatch.api.honeypot import create_honeypot_routes
+create_honeypot_routes(app)
 
 # Static files - serve at /static and serve index.html at root as fallback
 static_dir = Path(__file__).parent.parent / "static"

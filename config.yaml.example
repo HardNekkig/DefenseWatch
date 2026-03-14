@@ -19,13 +19,24 @@ logs:
   postgresql: []
   mail: []
   ftp: []
+  # Netfilter LOG parsing for SYN scan detection (nmap -sS)
+  # Requires iptables rule:
+  #   iptables -A INPUT -p tcp --tcp-flags SYN,ACK,FIN,RST SYN -j LOG --log-prefix "DWSYN:" --log-level 4
+  # Log destination depends on distro: /var/log/kern.log (Debian/Ubuntu) or /var/log/messages (RHEL/CentOS)
+  netfilter: []
+  # Example:
+  # netfilter:
+  #   - /var/log/kern.log
 
 detection:
   ssh_brute_threshold: 5
   ssh_brute_window_seconds: 300
   http_scan_threshold: 20
   http_scan_window_seconds: 60
-  portscan_threshold: 3
+  # Port scan detection: triggers when an IP hits N distinct service ports within the time window
+  # Note: Shodan/Censys typically scan single ports, so they're detected via scanner fingerprints instead
+  # Set to 2 for moderate sensitivity, or 1 to log all connection attempts (can be noisy)
+  portscan_threshold: 2
   portscan_window_seconds: 300
 
 geoip:

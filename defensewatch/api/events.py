@@ -72,6 +72,7 @@ async def get_http_events(
     ip: str | None = None,
     severity: str | None = None,
     vhost: str | None = None,
+    ua_class: str | None = None,
     since: float | None = None,
     sort: str | None = None,
     order: str = Query("desc", pattern="^(asc|desc)$"),
@@ -89,6 +90,9 @@ async def get_http_events(
     if vhost:
         conditions.append("vhost = ?")
         params.append(vhost)
+    if ua_class:
+        conditions.append("ua_class = ?")
+        params.append(ua_class)
     if since:
         conditions.append("timestamp >= ?")
         params.append(since)
@@ -97,6 +101,7 @@ async def get_http_events(
         "timestamp": "h.timestamp", "source_ip": "h.source_ip", "method": "h.method",
         "path": "h.path", "status_code": "h.status_code", "severity": "h.severity",
         "vhost": "h.vhost", "service_port": "h.service_port", "scanner_name": "h.scanner_name",
+        "ua_class": "h.ua_class",
     }
     order_col = valid_sort_cols.get(sort, "h.timestamp")
     order_dir = "ASC" if order == "asc" else "DESC"
@@ -127,6 +132,7 @@ async def get_http_events(
             "response_bytes": r["response_bytes"], "user_agent": r["user_agent"], "vhost": r["vhost"],
             "attack_types": attack_types, "scanner_name": r["scanner_name"],
             "severity": r["severity"], "service_port": r["service_port"],
+            "ua_class": r["ua_class"] if "ua_class" in r.keys() else "",
             "country_code": r["country_code"], "org": r["org"], "city": r["city"],
         })
 

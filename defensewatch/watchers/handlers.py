@@ -9,6 +9,7 @@ from watchdog.events import FileSystemEventHandler, FileModifiedEvent
 from defensewatch.parsers.ssh import parse_ssh_line, BruteForceTracker, DistributedBruteForceTracker
 from defensewatch.parsers.http import parse_http_line, HTTPScanTracker
 from defensewatch.parsers.portscan import PortScanTracker
+from defensewatch.parsers.netfilter import parse_netfilter_line
 from defensewatch.parsers.nginx_error import parse_nginx_error_line
 from defensewatch.parsers.mysql import parse_mysql_line
 from defensewatch.parsers.postgresql import parse_postgresql_line
@@ -338,13 +339,14 @@ class HTTPLogHandler(LogHandler):
             cursor = await db.execute(
                 """INSERT INTO http_events (timestamp, source_ip, method, path, http_version,
                    status_code, response_bytes, referer, user_agent, vhost,
-                   attack_types, scanner_name, severity, raw_line, service_port)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   attack_types, scanner_name, severity, raw_line, service_port, ua_class)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (event.timestamp, event.source_ip, event.method, event.path,
                  event.http_version, event.status_code, event.response_bytes,
                  event.referer, event.user_agent, event.vhost,
                  json.dumps(event.attack_types), event.scanner_name,
-                 event.severity, event.raw_line, event.service_port)
+                 event.severity, event.raw_line, event.service_port,
+                 getattr(event, 'ua_class', ''))
             )
             event.id = cursor.lastrowid
             await db.commit()
@@ -360,6 +362,7 @@ class HTTPLogHandler(LogHandler):
                 "severity": event.severity,
                 "scanner_name": event.scanner_name,
                 "service_port": event.service_port,
+                "ua_class": getattr(event, 'ua_class', ''),
             })
 
             if self.notifier and event.severity:
@@ -425,13 +428,14 @@ class NginxErrorLogHandler(LogHandler):
             cursor = await db.execute(
                 """INSERT INTO http_events (timestamp, source_ip, method, path, http_version,
                    status_code, response_bytes, referer, user_agent, vhost,
-                   attack_types, scanner_name, severity, raw_line, service_port)
-                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                   attack_types, scanner_name, severity, raw_line, service_port, ua_class)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (event.timestamp, event.source_ip, event.method, event.path,
                  event.http_version, event.status_code, event.response_bytes,
                  event.referer, event.user_agent, event.vhost,
                  json.dumps(event.attack_types), event.scanner_name,
-                 event.severity, event.raw_line, event.service_port)
+                 event.severity, event.raw_line, event.service_port,
+                 getattr(event, 'ua_class', ''))
             )
             event.id = cursor.lastrowid
             await db.commit()
@@ -447,6 +451,7 @@ class NginxErrorLogHandler(LogHandler):
                 "severity": event.severity,
                 "scanner_name": event.scanner_name,
                 "service_port": event.service_port,
+                "ua_class": getattr(event, 'ua_class', ''),
             })
 
             if self.notifier and event.severity:
@@ -549,3 +554,59 @@ class ServiceLogHandler(LogHandler):
 
         except Exception as e:
             logger.error(f"Error storing service event: {e}")
+
+
+class NetfilterLogHandler(LogHandler):
+    """Watches kernel/syslog for iptables LOG entries with DWSYN: prefix.
+
+    Feeds SYN packet info into the shared PortScanTracker to detect stealth
+    scans (nmap -sS) that never reach application-level logs.
+    Individual SYN events are NOT stored in the database — only port scan
+    detections are persisted via the existing _store_portscan() pipeline.
+    """
+
+    def __init__(self, file_path: str, loop: asyncio.AbstractEventLoop,
+                 manager: ConnectionManager,
+                 enrichment_queue: asyncio.Queue | None = None,
+                 notifier: Notifier | None = None,
+                 whitelist: list[str] | None = None,
+                 portscan_tracker: PortScanTracker | None = None):
+        super().__init__(file_path, loop)
+        self.manager = manager
+        self.enrichment_queue = enrichment_queue
+        self.notifier = notifier
+        self.whitelist = whitelist or []
+        self.portscan_tracker = portscan_tracker
+        self._seen_ips: dict[str, float] = {}
+        self._event_counter = 0
+
+    def _process_line(self, line: str):
+        event = parse_netfilter_line(line)
+        if event is None:
+            return
+        if _is_whitelisted(event.source_ip, self.whitelist):
+            return
+        if not self.portscan_tracker:
+            return
+        asyncio.run_coroutine_threadsafe(
+            self._handle_syn(event), self.loop
+        )
+
+    async def _handle_syn(self, event):
+        try:
+            ps = self.portscan_tracker.track(
+                event.source_ip, event.dest_port, event.timestamp)
+            if ps:
+                await _store_portscan(ps, self.manager, self.notifier)
+
+            self._event_counter += 1
+            if self._event_counter % 200 == 0:
+                self.portscan_tracker.cleanup()
+
+            if _should_enrich(self._seen_ips, event.source_ip) and self.enrichment_queue:
+                try:
+                    self.enrichment_queue.put_nowait(event.source_ip)
+                except asyncio.QueueFull:
+                    pass
+        except Exception as e:
+            logger.error(f"Error handling netfilter SYN event: {e}")

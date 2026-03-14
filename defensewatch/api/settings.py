@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+from defensewatch.audit import log_audit
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,7 @@ async def update_general(body: GeneralSettings):
 
     logger.info("General settings updated")
     _persist_config()
+    await log_audit("settings_update", "general", "General settings updated", actor="api")
     return {"ok": True}
 
 
@@ -217,6 +219,7 @@ async def update_webhooks(body: WebhookSettings):
 
     logger.info("Webhook settings updated")
     _persist_config()
+    await log_audit("settings_update", "webhooks", "Webhook settings updated", actor="api")
     return {"ok": True}
 
 
@@ -253,6 +256,7 @@ async def update_api_keys(body: ApiKeySettings):
 
     logger.info("API key settings updated")
     _persist_config()
+    await log_audit("settings_update", "api_keys", "API key settings updated", actor="api")
     return {"ok": True}
 
 
@@ -277,6 +281,7 @@ async def update_detection(body: DetectionSettings):
 
     logger.info("Detection settings updated")
     _persist_config()
+    await log_audit("settings_update", "detection", "Detection settings updated", actor="api")
     return {"ok": True}
 
 
@@ -310,6 +315,7 @@ async def add_service(body: ServiceEntry):
     log_list.append(entry)
     logger.info(f"Added {body.service_type} service: {body.path} (port {port})")
     _persist_config()
+    await log_audit("service_add", body.service_type, f"Added service: {body.path}", actor="api")
     return {"ok": True, "message": f"Added {body.service_type} service: {body.path}"}
 
 
@@ -337,6 +343,7 @@ async def remove_service(body: ServiceRemove):
     setattr(_config.logs, body.service_type, new_list)
     logger.info(f"Removed {body.service_type} service: {body.path}")
     _persist_config()
+    await log_audit("service_remove", body.service_type, f"Removed service: {body.path}", actor="api")
     return {"ok": True, "message": f"Removed {body.service_type} service: {body.path}"}
 
 
@@ -437,6 +444,56 @@ def _write_config_to_disk():
             "virustotal_api_key": "",
             "censys_api_id": "",
             "censys_api_secret": "",
+        },
+        "auth": {
+            "enabled": _config.auth.enabled,
+            "jwt_secret": "",
+            "token_expiry_hours": _config.auth.token_expiry_hours,
+            "refresh_expiry_hours": _config.auth.refresh_expiry_hours,
+        },
+        "honeypot": {
+            "enabled": _config.honeypot.enabled,
+            "paths": _config.honeypot.paths,
+            "auto_block": _config.honeypot.auto_block,
+            "score_boost": _config.honeypot.score_boost,
+        },
+        "blocklists": {
+            "enabled": _config.blocklists.enabled,
+            "refresh_interval_hours": _config.blocklists.refresh_interval_hours,
+            "lists": _config.blocklists.lists,
+            "auto_block": _config.blocklists.auto_block,
+        },
+        "correlation": {
+            "enabled": _config.correlation.enabled,
+            "check_interval_seconds": _config.correlation.check_interval_seconds,
+            "lookback_seconds": _config.correlation.lookback_seconds,
+            "min_score_for_incident": _config.correlation.min_score_for_incident,
+            "rules": _config.correlation.rules,
+        },
+        "playbooks": {
+            "enabled": _config.playbooks.enabled,
+            "check_interval_seconds": _config.playbooks.check_interval_seconds,
+            "rules": _config.playbooks.rules,
+        },
+        "geo_policy": {
+            "enabled": _config.geo_policy.enabled,
+            "mode": _config.geo_policy.mode,
+            "countries": _config.geo_policy.countries,
+            "action": _config.geo_policy.action,
+            "block_duration_hours": _config.geo_policy.block_duration_hours,
+            "exempt_ips": _config.geo_policy.exempt_ips,
+        },
+        "health_monitor": {
+            "enabled": _config.health_monitor.enabled,
+            "sample_interval_seconds": _config.health_monitor.sample_interval_seconds,
+            "ring_buffer_size": _config.health_monitor.ring_buffer_size,
+            "deadman_threshold_seconds": _config.health_monitor.deadman_threshold_seconds,
+        },
+        "dedup": {
+            "enabled": _config.dedup.enabled,
+            "ssh_window_seconds": _config.dedup.ssh_window_seconds,
+            "http_window_seconds": _config.dedup.http_window_seconds,
+            "max_batch_size": _config.dedup.max_batch_size,
         },
     }
 

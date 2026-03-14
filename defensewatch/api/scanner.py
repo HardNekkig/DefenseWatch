@@ -6,6 +6,7 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, Query
 from pydantic import BaseModel
 from defensewatch.database import get_db
+from defensewatch.audit import log_audit
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +339,7 @@ async def _run_batched_scan(
         )
         scan_id = cursor.lastrowid
         await db.commit()
+        await log_audit("scan_start", str(scan_id), f"Started vulnerability scan", actor="api")
 
         batch_labels = [b["label"] for b in batches]
         _current_scan = {
